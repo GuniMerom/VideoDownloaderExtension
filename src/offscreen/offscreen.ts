@@ -97,7 +97,7 @@ async function downloadAndConcatenate(
  * Download both video and audio segments, then merge them into a single MP4.
  * 
  * For fMP4 (fragmented MP4), we create a merged file by:
- * 1. Combining the moov atoms from both init segments
+ * 1. Combining the moov atoms from both init segments (fixing track IDs)
  * 2. Interleaving video and audio moof+mdat fragments
  */
 async function downloadAndMergeTracks(
@@ -125,9 +125,18 @@ async function downloadAndMergeTracks(
   }
 
   reportProgress(taskId, 92);
+  console.log(`[Offscreen] Downloaded video: ${videoBuffers.length} bufs, audio: ${audioBuffers.length} bufs`);
 
-  // Merge the fMP4 tracks
-  const merged = mergeFMP4Tracks(videoBuffers, audioBuffers);
+  // Try to merge, fall back to video-only if merge fails
+  let merged: Uint8Array;
+  try {
+    merged = mergeFMP4Tracks(videoBuffers, audioBuffers);
+    console.log(`[Offscreen] Merged successfully: ${merged.length} bytes`);
+  } catch (err) {
+    console.error('[Offscreen] Merge failed, falling back to video-only:', err);
+    merged = concatenateBuffers(videoBuffers);
+  }
+
   reportProgress(taskId, 98);
 
   const blob = new Blob([merged.buffer as ArrayBuffer], { type: 'video/mp4' });
@@ -135,18 +144,18 @@ async function downloadAndMergeTracks(
   return { blobUrl, size: blob.size };
 }
 
+function concatenateBuffers(buffers: ArrayBuffer[]): Uint8Array {
+  const totalSize = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const result = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const buf of buffers) {
+    result.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  return result;
+}
+
 // ─── fMP4 Box Parsing & Merging ───
-
-function readUint32(data: DataView, offset: number): number {
-  return data.getUint32(offset);
-}
-
-function readBoxType(data: DataView, offset: number): string {
-  return String.fromCharCode(
-    data.getUint8(offset), data.getUint8(offset + 1),
-    data.getUint8(offset + 2), data.getUint8(offset + 3),
-  );
-}
 
 interface MP4Box {
   type: string;
@@ -160,10 +169,12 @@ function parseBoxes(buffer: ArrayBuffer): MP4Box[] {
   const view = new DataView(buffer);
   let offset = 0;
 
-  while (offset < buffer.byteLength) {
-    if (offset + 8 > buffer.byteLength) break;
-    const size = readUint32(view, offset);
-    const type = readBoxType(view, offset + 4);
+  while (offset + 8 <= buffer.byteLength) {
+    const size = view.getUint32(offset);
+    const type = String.fromCharCode(
+      view.getUint8(offset + 4), view.getUint8(offset + 5),
+      view.getUint8(offset + 6), view.getUint8(offset + 7),
+    );
     if (size < 8 || offset + size > buffer.byteLength) break;
     boxes.push({
       type,
@@ -178,144 +189,196 @@ function parseBoxes(buffer: ArrayBuffer): MP4Box[] {
 }
 
 /**
- * Merge video and audio fMP4 tracks into a single MP4 file.
+ * Find a box by type within a container's payload (recursive search).
+ */
+function findBox(data: Uint8Array, targetType: string): Uint8Array | null {
+  let offset = 0;
+  while (offset + 8 <= data.length) {
+    const view = new DataView(data.buffer, data.byteOffset + offset);
+    const size = view.getUint32(0);
+    const type = String.fromCharCode(data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]);
+    if (size < 8 || offset + size > data.length) break;
+    if (type === targetType) {
+      return new Uint8Array(data.buffer, data.byteOffset + offset, size);
+    }
+    offset += size;
+  }
+  return null;
+}
+
+/**
+ * Merge video and audio fMP4 tracks into a single playable MP4 file.
  * 
- * Video buffers[0] = init segment (ftyp + moov with video trak)
- * Audio buffers[0] = init segment (ftyp + moov with audio trak)
- * 
- * Strategy: Use video's ftyp, create merged moov with both traks,
- * then append all video moof+mdat followed by all audio moof+mdat.
- * 
- * For simplicity, we renumber audio track IDs to avoid conflicts.
+ * Approach:
+ * - Use video's ftyp box
+ * - Build merged moov: video's mvhd (patched) + video's trak + audio's trak (patched track ID)
+ * - Append all video fragments, then all audio fragments (with patched track IDs)
  */
 function mergeFMP4Tracks(videoBuffers: ArrayBuffer[], audioBuffers: ArrayBuffer[]): Uint8Array {
-  // Parse init segments
   const videoInitBoxes = parseBoxes(videoBuffers[0]);
   const audioInitBoxes = parseBoxes(audioBuffers[0]);
 
-  // Get ftyp from video
   const ftyp = videoInitBoxes.find(b => b.type === 'ftyp');
-
-  // Get moov from both
   const videoMoov = videoInitBoxes.find(b => b.type === 'moov');
   const audioMoov = audioInitBoxes.find(b => b.type === 'moov');
 
   if (!ftyp || !videoMoov || !audioMoov) {
-    // Fallback: just concatenate video only (no merge possible)
-    console.warn('[Offscreen] Cannot merge: missing init segment boxes, falling back to video-only');
-    const totalSize = videoBuffers.reduce((sum, b) => sum + b.byteLength, 0);
-    const result = new Uint8Array(totalSize);
-    let offset = 0;
-    for (const buf of videoBuffers) {
-      result.set(new Uint8Array(buf), offset);
-      offset += buf.byteLength;
-    }
-    return result;
+    console.warn('[Offscreen] Missing init boxes, video-only fallback');
+    return concatenateBuffers(videoBuffers);
   }
 
-  // Extract trak boxes from audio moov
-  const audioMoovInnerBuf = (audioMoov.data.buffer as ArrayBuffer).slice(
-    audioMoov.data.byteOffset + 8,
-    audioMoov.data.byteOffset + audioMoov.size,
-  );
-  const audioMoovBoxes = parseBoxes(audioMoovInnerBuf);
-  const audioTraks = audioMoovBoxes.filter(b => b.type === 'trak');
+  console.log(`[Offscreen] ftyp: ${ftyp.size}b, videoMoov: ${videoMoov.size}b, audioMoov: ${audioMoov.size}b`);
 
-  // Renumber track IDs in audio moof fragments to avoid conflict with video track
-  // Video typically uses track_id=1, so we set audio to track_id=2
-  const AUDIO_TRACK_ID = 2;
+  // Parse moov children to get individual boxes
+  const videoMoovChildren = parseBoxes(videoMoov.data.buffer.slice(
+    videoMoov.data.byteOffset + 8, videoMoov.data.byteOffset + videoMoov.size) as ArrayBuffer);
+  const audioMoovChildren = parseBoxes(audioMoov.data.buffer.slice(
+    audioMoov.data.byteOffset + 8, audioMoov.data.byteOffset + audioMoov.size) as ArrayBuffer);
 
-  // Build merged moov: video moov content + audio trak boxes
-  const videoMoovContent = new Uint8Array(videoMoov.data.buffer,
-    videoMoov.data.byteOffset + 8, videoMoov.size - 8);
-  
-  let audioTrakTotalSize = 0;
+  console.log(`[Offscreen] Video moov children: ${videoMoovChildren.map(b => b.type).join(', ')}`);
+  console.log(`[Offscreen] Audio moov children: ${audioMoovChildren.map(b => b.type).join(', ')}`);
+
+  // Get audio trak(s) and patch their track IDs
+  const audioTraks = audioMoovChildren.filter(b => b.type === 'trak');
+  const AUDIO_TRACK_ID = 2; // Video is typically track 1
+
+  // Patch track ID in each audio trak's tkhd box
   for (const trak of audioTraks) {
-    audioTrakTotalSize += trak.size;
+    const trakPayload = new Uint8Array(trak.data.buffer, trak.data.byteOffset + 8, trak.size - 8);
+    patchTkhdTrackId(trakPayload, AUDIO_TRACK_ID);
   }
 
-  const mergedMoovSize = 8 + videoMoovContent.length + audioTrakTotalSize;
+  // Patch mvhd.next_track_ID in video moov
+  const mvhd = videoMoovChildren.find(b => b.type === 'mvhd');
+  if (mvhd) {
+    patchMvhdNextTrackId(mvhd.data, AUDIO_TRACK_ID + 1); // next available = 3
+  }
+
+  // Build merged moov: [mvhd + video traks + mvex + ...] + [audio traks]
+  // We include all video moov children + audio trak boxes
+  let moovContentSize = 0;
+  for (const box of videoMoovChildren) {
+    moovContentSize += box.size;
+  }
+  for (const trak of audioTraks) {
+    moovContentSize += trak.size;
+  }
+
+  const mergedMoovSize = 8 + moovContentSize;
   const mergedMoov = new Uint8Array(mergedMoovSize);
-  const moovView = new DataView(mergedMoov.buffer);
-  moovView.setUint32(0, mergedMoovSize);
+  new DataView(mergedMoov.buffer).setUint32(0, mergedMoovSize);
   mergedMoov[4] = 0x6D; mergedMoov[5] = 0x6F; mergedMoov[6] = 0x6F; mergedMoov[7] = 0x76; // "moov"
-  mergedMoov.set(videoMoovContent, 8);
-  let trakOffset = 8 + videoMoovContent.length;
+
+  let writePos = 8;
+  // Write video moov children (mvhd, trak, mvex, etc.)
+  for (const box of videoMoovChildren) {
+    mergedMoov.set(box.data, writePos);
+    writePos += box.size;
+  }
+  // Write audio trak boxes (with patched track ID)
   for (const trak of audioTraks) {
-    mergedMoov.set(trak.data, trakOffset);
-    trakOffset += trak.size;
+    mergedMoov.set(trak.data, writePos);
+    writePos += trak.size;
   }
 
-  // Calculate total size
+  // Calculate total output size
   let totalSize = ftyp.size + mergedMoovSize;
-  // Video fragments (skip init segment at index 0)
-  for (let i = 1; i < videoBuffers.length; i++) {
-    totalSize += videoBuffers[i].byteLength;
-  }
-  // Audio fragments (skip init segment at index 0), with track ID rewriting
-  for (let i = 1; i < audioBuffers.length; i++) {
-    totalSize += audioBuffers[i].byteLength;
-  }
+  for (let i = 1; i < videoBuffers.length; i++) totalSize += videoBuffers[i].byteLength;
+  for (let i = 1; i < audioBuffers.length; i++) totalSize += audioBuffers[i].byteLength;
 
-  // Assemble the final file
+  // Assemble final file
   const result = new Uint8Array(totalSize);
-  let writeOffset = 0;
+  let offset = 0;
 
-  // ftyp
-  result.set(ftyp.data, writeOffset);
-  writeOffset += ftyp.size;
+  result.set(ftyp.data, offset);
+  offset += ftyp.size;
 
-  // merged moov
-  result.set(mergedMoov, writeOffset);
-  writeOffset += mergedMoovSize;
+  result.set(mergedMoov, offset);
+  offset += mergedMoovSize;
 
-  // Video moof+mdat fragments
+  // Video fragments
   for (let i = 1; i < videoBuffers.length; i++) {
-    const fragData = new Uint8Array(videoBuffers[i]);
-    result.set(fragData, writeOffset);
-    writeOffset += fragData.length;
+    result.set(new Uint8Array(videoBuffers[i]), offset);
+    offset += videoBuffers[i].byteLength;
   }
 
-  // Audio moof+mdat fragments (rewrite track_id in moof/traf/tfhd)
+  // Audio fragments with rewritten track IDs in tfhd
   for (let i = 1; i < audioBuffers.length; i++) {
-    const fragData = new Uint8Array(audioBuffers[i]);
-    // Rewrite track_id in tfhd box (inside moof > traf > tfhd)
-    rewriteTrackId(fragData, AUDIO_TRACK_ID);
-    result.set(fragData, writeOffset);
-    writeOffset += fragData.length;
+    const frag = new Uint8Array(audioBuffers[i].slice(0)); // copy to avoid mutating original
+    rewriteTrackIdInFragment(frag, AUDIO_TRACK_ID);
+    result.set(frag, offset);
+    offset += frag.length;
   }
 
+  console.log(`[Offscreen] Final merged: ${offset} bytes (expected ${totalSize})`);
   return result;
 }
 
 /**
- * Rewrite the track_id field in tfhd boxes within an fMP4 fragment.
- * tfhd is at: moof > traf > tfhd, and track_id is at offset 12 in the tfhd box
- * (after size[4] + type[4] + version_flags[4]).
+ * Patch the track_id in a tkhd (Track Header) box within a trak payload.
+ * tkhd structure: size(4) + 'tkhd'(4) + version(1) + flags(3) + ...
+ *   version 0: creation_time(4) + modification_time(4) + track_ID(4)
+ *   version 1: creation_time(8) + modification_time(8) + track_ID(4)
  */
-function rewriteTrackId(data: Uint8Array, newTrackId: number): void {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+function patchTkhdTrackId(trakPayload: Uint8Array, newTrackId: number): void {
   let offset = 0;
+  while (offset + 8 <= trakPayload.length) {
+    const view = new DataView(trakPayload.buffer, trakPayload.byteOffset + offset);
+    const size = view.getUint32(0);
+    const type = String.fromCharCode(
+      trakPayload[offset + 4], trakPayload[offset + 5],
+      trakPayload[offset + 6], trakPayload[offset + 7],
+    );
+    if (size < 8 || offset + size > trakPayload.length) break;
 
+    if (type === 'tkhd') {
+      const version = trakPayload[offset + 8];
+      const trackIdOffset = version === 1 ? 20 : 12; // after version+flags + time fields
+      view.setUint32(trackIdOffset, newTrackId);
+      console.log(`[Offscreen] Patched tkhd track_id to ${newTrackId}`);
+      return;
+    }
+    offset += size;
+  }
+}
+
+/**
+ * Patch mvhd.next_track_ID.
+ * mvhd structure: size(4) + 'mvhd'(4) + version(1) + flags(3) + ...
+ *   version 0: ... next_track_ID at offset 96+8 = byte 104 from box start
+ *   version 1: ... next_track_ID at offset 108+8 = byte 116 from box start
+ * Actually: next_track_ID is the last 4 bytes of mvhd.
+ */
+function patchMvhdNextTrackId(mvhdData: Uint8Array, nextTrackId: number): void {
+  // next_track_ID is always the last 4 bytes of the mvhd box
+  const view = new DataView(mvhdData.buffer, mvhdData.byteOffset);
+  const size = view.getUint32(0);
+  view.setUint32(size - 4, nextTrackId);
+  console.log(`[Offscreen] Patched mvhd next_track_id to ${nextTrackId}`);
+}
+
+/**
+ * Rewrite track_id in tfhd boxes within an fMP4 fragment (moof container).
+ */
+function rewriteTrackIdInFragment(data: Uint8Array, newTrackId: number): void {
+  let offset = 0;
   while (offset + 8 <= data.length) {
-    const size = view.getUint32(offset);
-    if (size < 8 || offset + size > data.length) break;
+    const view = new DataView(data.buffer, data.byteOffset + offset);
+    const size = view.getUint32(0);
     const type = String.fromCharCode(
       data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
     );
+    if (size < 8 || offset + size > data.length) break;
 
     if (type === 'moof' || type === 'traf') {
-      // Recurse into container boxes (skip 8-byte header)
-      rewriteTrackId(
+      // Recurse into container (skip 8-byte header)
+      rewriteTrackIdInFragment(
         new Uint8Array(data.buffer, data.byteOffset + offset + 8, size - 8),
         newTrackId,
       );
-    } else if (type === 'tfhd') {
+    } else if (type === 'tfhd' && size >= 16) {
       // tfhd: size(4) + 'tfhd'(4) + version_flags(4) + track_id(4)
-      if (size >= 16) {
-        const tfhdView = new DataView(data.buffer, data.byteOffset + offset);
-        tfhdView.setUint32(12, newTrackId);
-      }
+      view.setUint32(12, newTrackId);
     }
 
     offset += size;
