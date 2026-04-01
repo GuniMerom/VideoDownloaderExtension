@@ -385,9 +385,32 @@ async function handleDownloadVideo(
 
 // ─── Download execution ───
 
+/**
+ * Keep the service worker alive during long operations.
+ * MV3 service workers are killed after ~30s of inactivity.
+ * We use chrome.alarms as a keepalive mechanism.
+ */
+const KEEPALIVE_ALARM = 'download-keepalive';
+
+function startKeepalive(): void {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
+}
+
+function stopKeepalive(): void {
+  chrome.alarms.clear(KEEPALIVE_ALARM);
+}
+
+// Listen for the keepalive alarm — just handling it keeps the SW alive
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEPALIVE_ALARM) {
+    // No-op: just receiving this event keeps the service worker alive
+  }
+});
+
 async function executeDownload(task: DownloadTask): Promise<void> {
   task.status = 'downloading';
   broadcastProgress(task);
+  startKeepalive();
 
   const onProgress = (progress: number) => {
     task.progress = progress;
@@ -420,9 +443,18 @@ async function executeDownload(task: DownloadTask): Promise<void> {
       );
     } else if (isSegmented) {
       // HLS/DASH segmented stream — resolve manifest to actual segment URLs
-      const segmentUrls = await resolveManifestToSegments(stream.url);
-      const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
-      await triggerBrowserDownload(segmentBlob, filename);
+      console.log('[SW] Resolving manifest to segments:', stream.url.substring(0, 100));
+      try {
+        const segmentUrls = await resolveManifestToSegments(stream.url);
+        console.log(`[SW] Found ${segmentUrls.length} segments, downloading...`);
+        const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
+        console.log(`[SW] Segments downloaded, total size: ${segmentBlob.size} bytes`);
+        await triggerBrowserDownload(segmentBlob, filename);
+      } catch (segErr) {
+        // Segmented download failed — try direct download as fallback
+        console.warn('[SW] Segmented download failed, trying direct:', segErr);
+        await downloadDirect(stream.url, filename);
+      }
     } else {
       // Fallback: treat as direct download
       await downloadDirect(stream.url, filename);
@@ -471,6 +503,7 @@ async function executeDownload(task: DownloadTask): Promise<void> {
     task.completedAt = Date.now();
     broadcastProgress(task);
   } finally {
+    stopKeepalive();
     // Clean up from in-memory map after a delay so the popup can query final status
     setTimeout(() => {
       activeDownloads.delete(task.id);
