@@ -18,6 +18,8 @@ import type {
 import { getSettings, saveSettings, getDownloadHistory, addToHistory, getDetectedVideosForTab, setDetectedVideosForTab, clearTabData } from '../core/storage';
 import { downloadDirect, downloadSegmented, downloadAndMerge, triggerBrowserDownload } from '../core/downloader';
 import { downloadAllSubtitles } from '../core/subtitle-extractor';
+import { isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist } from '../core/hls-parser';
+import { parseMPD, getVideoRepresentations, resolveSegmentUrls } from '../core/dash-parser';
 import { selectBestStreams } from '../core/quality-selector';
 import { providerRegistry } from '../providers/provider-registry';
 import type { ExtractionContext } from '../providers/provider-interface';
@@ -285,8 +287,9 @@ async function executeDownload(task: DownloadTask): Promise<void> {
         onProgress,
       );
     } else if (isSegmented) {
-      // HLS/DASH segmented stream — needs segment URLs resolved upstream
-      const segmentBlob = await downloadSegmented([stream.url], onProgress);
+      // HLS/DASH segmented stream — resolve manifest to actual segment URLs
+      const segmentUrls = await resolveManifestToSegments(stream.url);
+      const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
       await triggerBrowserDownload(segmentBlob, filename);
     } else {
       // Fallback: treat as direct download
@@ -360,6 +363,51 @@ function getFileExtension(stream: VideoStream): string {
   }
   if (stream.codec?.includes('vp9') || stream.codec?.includes('vp8')) return 'webm';
   return 'mp4';
+}
+
+/**
+ * Resolve an HLS/DASH manifest URL into an array of actual segment URLs.
+ * For HLS: fetches the manifest, picks the highest-quality variant if master,
+ * then returns segment URLs from the media playlist.
+ * For DASH: fetches the MPD, picks the highest-bandwidth video representation,
+ * and resolves segment URLs from templates or segment lists.
+ */
+async function resolveManifestToSegments(manifestUrl: string): Promise<string[]> {
+  const response = await fetch(manifestUrl);
+  const text = await response.text();
+
+  if (manifestUrl.includes('.m3u8') || text.trimStart().startsWith('#EXTM3U')) {
+    // HLS manifest
+    if (isMasterPlaylist(text)) {
+      const master = parseMasterPlaylist(text, manifestUrl);
+      if (master.variants.length === 0) {
+        throw new Error('No HLS variants found in master playlist');
+      }
+      // Pick highest bandwidth variant
+      const best = master.variants.sort((a, b) => b.bandwidth - a.bandwidth)[0];
+      // Fetch and parse the media playlist
+      const mediaResp = await fetch(best.url);
+      const mediaText = await mediaResp.text();
+      const media = parseMediaPlaylist(mediaText, best.url);
+      return media.segments.map(s => s.url);
+    } else {
+      const media = parseMediaPlaylist(text, manifestUrl);
+      return media.segments.map(s => s.url);
+    }
+  } else if (manifestUrl.includes('.mpd') || text.trimStart().startsWith('<?xml') || text.trimStart().startsWith('<MPD')) {
+    // DASH manifest
+    const parsed = parseMPD(text, manifestUrl);
+    const videoReps = getVideoRepresentations(parsed);
+    if (videoReps.length === 0) {
+      throw new Error('No DASH video representations found');
+    }
+    // Pick highest bandwidth representation
+    const best = videoReps[0]; // already sorted by bandwidth desc
+    return resolveSegmentUrls(best, manifestUrl);
+  }
+
+  // Fallback: treat the URL itself as a single segment
+  return [manifestUrl];
 }
 
 // ─── Tab lifecycle (registered at module scope) ───
