@@ -7,15 +7,65 @@ export function isFFmpegAvailable(): boolean {
   return ffmpegLoaded;
 }
 
-export function concatenateSegments(segments: ArrayBuffer[]): Blob {
+export function concatenateSegments(
+  segments: ArrayBuffer[],
+  onProgress?: (percent: number) => void,
+): Blob {
+  if (segments.length === 0) {
+    return new Blob([], { type: 'video/mp2t' });
+  }
+
   const totalLength = segments.reduce((sum, buf) => sum + buf.byteLength, 0);
   const combined = new Uint8Array(totalLength);
   let offset = 0;
-  for (const buf of segments) {
-    combined.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
+  for (let i = 0; i < segments.length; i++) {
+    combined.set(new Uint8Array(segments[i]), offset);
+    offset += segments[i].byteLength;
+    if (onProgress) {
+      onProgress(Math.round(((i + 1) / segments.length) * 100));
+    }
   }
-  return new Blob([combined], { type: 'video/mp2t' });
+
+  // Detect format: fMP4 starts with an 'ftyp' or 'styp' box, MPEG-TS starts with 0x47
+  const mimeType = isFMP4(segments[0]) ? 'video/mp4' : 'video/mp2t';
+  return new Blob([combined], { type: mimeType });
+}
+
+/** Detect if a buffer starts with an fMP4 box (ftyp or styp). */
+function isFMP4(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 8) return false;
+  const view = new DataView(buffer);
+  // MP4 boxes have a 4-byte size followed by a 4-byte type
+  const boxType = String.fromCharCode(
+    view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7),
+  );
+  return boxType === 'ftyp' || boxType === 'styp' || boxType === 'moov';
+}
+
+/**
+ * Concatenate an initialization segment with media segments (fMP4).
+ * For fMP4, the init segment (containing moov box) must precede the media segments.
+ * For MPEG-TS, simple concatenation works, so init segment is prepended as-is.
+ */
+export function concatenateWithInit(
+  initSegment: ArrayBuffer,
+  segments: ArrayBuffer[],
+  onProgress?: (percent: number) => void,
+): Blob {
+  const allSegments = [initSegment, ...segments];
+  const totalLength = allSegments.reduce((sum, buf) => sum + buf.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (let i = 0; i < allSegments.length; i++) {
+    combined.set(new Uint8Array(allSegments[i]), offset);
+    offset += allSegments[i].byteLength;
+    if (onProgress) {
+      onProgress(Math.round(((i + 1) / allSegments.length) * 100));
+    }
+  }
+
+  const mimeType = isFMP4(initSegment) ? 'video/mp4' : 'video/mp2t';
+  return new Blob([combined], { type: mimeType });
 }
 
 /**
@@ -61,20 +111,9 @@ export async function muxStreams(
     });
   }
 
-  // Phase 2: ffmpeg.wasm muxing implementation
-  // const ffmpeg = new FFmpeg();
-  // await ffmpeg.load();
-  // await ffmpeg.writeFile('video.mp4', new Uint8Array(await videoBlob.arrayBuffer()));
-  // await ffmpeg.writeFile('audio.mp4', new Uint8Array(await audioBlob.arrayBuffer()));
-  // await ffmpeg.exec([
-  //   '-i', 'video.mp4',
-  //   '-i', 'audio.mp4',
-  //   '-c', 'copy',
-  //   '-movflags', '+faststart',
-  //   `output.${outputFormat}`,
-  // ]);
-  // const data = await ffmpeg.readFile(`output.${outputFormat}`);
-  // return new Blob([data], { type: `video/${outputFormat}` });
-
-  throw new Error('ffmpeg.wasm muxing not yet implemented');
+  // ffmpeg.wasm muxing not available in MV3 (can't load WASM from CDN).
+  // The caller (downloader.ts) handles the fallback by downloading separate files.
+  return new Blob([videoBlob], {
+    type: outputFormat === 'webm' ? 'video/webm' : 'video/mp4',
+  });
 }

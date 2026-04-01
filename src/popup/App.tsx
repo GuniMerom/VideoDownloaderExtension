@@ -9,6 +9,7 @@ import type {
 import { LinkInput } from './components/LinkInput';
 import { VideoCard } from './components/VideoCard';
 import { DownloadProgress } from './components/DownloadProgress';
+import { Settings } from './components/Settings';
 
 export function App() {
   const [urlInput, setUrlInput] = useState('');
@@ -17,6 +18,7 @@ export function App() {
   const [detectedVideos, setDetectedVideos] = useState<DetectedVideo[]>([]);
   const [downloadTasks, setDownloadTasks] = useState<Map<string, DownloadTask>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Fetch detected videos from the current tab on mount
   useEffect(() => {
@@ -141,72 +143,129 @@ export function App() {
 
   const activeTasks = Array.from(downloadTasks.values());
 
+  // Ctrl+V keyboard shortcut: auto-paste-and-analyze
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        // Let the LinkInput's own paste handler deal with focused input
+        if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+        try {
+          const text = await navigator.clipboard.readText();
+          const trimmed = text?.trim();
+          if (trimmed && /^https?:\/\/.+/i.test(trimmed)) {
+            handleAnalyze(trimmed);
+          }
+        } catch {
+          // Clipboard access may be denied
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleAnalyze]);
+
+  const hasNoContent = !videoInfo && detectedVideos.length === 0 && activeTasks.length === 0 && !analyzing;
+
   return (
     <div class="popup-container">
       <header class="popup-header">
         <h1>
           <span class="header-icon">🎬</span> Video Downloader
         </h1>
+        <button
+          class="btn-icon header-settings-btn"
+          onClick={() => setShowSettings(!showSettings)}
+          aria-label="Settings"
+          title="Settings"
+        >
+          ⚙️
+        </button>
       </header>
 
-      <main class="popup-body">
-        <section class="section">
-          <LinkInput
-            onAnalyze={handleAnalyze}
-            analyzing={analyzing}
-            error={error ?? undefined}
-          />
-        </section>
-
-        {videoInfo && (
+      {showSettings ? (
+        <Settings onClose={() => setShowSettings(false)} />
+      ) : (
+        <main class="popup-body">
           <section class="section">
-            <VideoCard videoInfo={videoInfo} onDownload={handleDownload} />
+            <LinkInput
+              onAnalyze={handleAnalyze}
+              analyzing={analyzing}
+              error={error ?? undefined}
+            />
           </section>
-        )}
 
-        {detectedVideos.length > 0 && (
-          <section class="section">
-            <h2 class="section-title">
-              <span class="section-icon">📡</span> Detected on this page
-            </h2>
-            <div class="detected-list">
-              {detectedVideos.map((video) => (
-                <div class="detected-item" key={video.id}>
-                  <div class="detected-info">
-                    {video.thumbnail && (
-                      <img
-                        class="detected-thumb"
-                        src={video.thumbnail}
-                        alt=""
-                      />
-                    )}
-                    <div class="detected-meta">
-                      <span class="detected-title">
-                        {video.title || 'Untitled Video'}
-                      </span>
-                      <span class={`provider-badge provider-${video.provider.toLowerCase()}`}>
-                        {video.provider}
-                      </span>
+          {analyzing && (
+            <section class="section">
+              <div class="loading-skeleton">
+                <div class="skeleton-line skeleton-wide" />
+                <div class="skeleton-line skeleton-medium" />
+                <div class="skeleton-line skeleton-narrow" />
+              </div>
+            </section>
+          )}
+
+          {videoInfo && (
+            <section class="section">
+              <VideoCard videoInfo={videoInfo} onDownload={handleDownload} />
+            </section>
+          )}
+
+          {detectedVideos.length > 0 && (
+            <section class="section">
+              <h2 class="section-title">
+                <span class="section-icon">📡</span> Detected on this page
+              </h2>
+              <div class="detected-list">
+                {detectedVideos.map((video) => (
+                  <div class="detected-item" key={video.id}>
+                    <div class="detected-info">
+                      {video.thumbnail && (
+                        <img
+                          class="detected-thumb"
+                          src={video.thumbnail}
+                          alt=""
+                        />
+                      )}
+                      <div class="detected-meta">
+                        <span class="detected-title">
+                          {video.title || 'Untitled Video'}
+                        </span>
+                        <span class={`provider-badge provider-${video.provider.toLowerCase()}`}>
+                          {video.provider}
+                        </span>
+                      </div>
                     </div>
+                    <button
+                      class="btn btn-sm btn-primary"
+                      onClick={() => handleDetectedDownload(video)}
+                    >
+                      Download ▾
+                    </button>
                   </div>
-                  <button
-                    class="btn btn-sm btn-primary"
-                    onClick={() => handleDetectedDownload(video)}
-                  >
-                    Download ▾
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+                ))}
+              </div>
+            </section>
+          )}
 
-        {activeTasks.length > 0 && (
-          <section class="section">
-            <DownloadProgress tasks={activeTasks} />
-          </section>
-        )}
-      </main>
+          {activeTasks.length > 0 && (
+            <section class="section">
+              <DownloadProgress tasks={activeTasks} />
+            </section>
+          )}
+
+          {hasNoContent && (
+            <section class="section">
+              <div class="empty-state">
+                <span class="empty-state-icon">🔍</span>
+                <p class="empty-state-text">No videos detected on this page.</p>
+                <p class="empty-state-hint">Try pasting a URL above.</p>
+              </div>
+            </section>
+          )}
+        </main>
+      )}
     </div>
   );
 }

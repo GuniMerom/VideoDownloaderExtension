@@ -1,0 +1,218 @@
+import type { VideoInfo, VideoStream, SubtitleTrack } from '../shared/types';
+import type { VideoProvider, ExtractionContext } from './provider-interface';
+
+function generateId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : 'loom-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+const LOOM_URL_RE = /loom\.com\/(?:embed|share)\/([a-f0-9]+)/i;
+
+function extractVideoId(url: string): string | null {
+  const m = url.match(LOOM_URL_RE);
+  return m ? m[1] : null;
+}
+
+interface LoomTranscodedUrl {
+  url: string;
+}
+
+interface LoomNextDataVideo {
+  id?: string;
+  name?: string;
+  title?: string;
+  duration?: number;
+  thumbnailUrl?: string;
+  thumbnail_url?: string;
+  videoUrl?: string;
+  video_url?: string;
+  hlsUrl?: string;
+  hls_url?: string;
+  transcription?: {
+    url?: string;
+    language?: string;
+  };
+  captions?: Array<{
+    url: string;
+    language: string;
+    label?: string;
+  }>;
+}
+
+async function fetchTranscodedUrl(
+  videoId: string,
+): Promise<LoomTranscodedUrl | null> {
+  try {
+    const resp = await fetch(
+      `https://www.loom.com/api/campaigns/sessions/${videoId}/transcoded-url`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anonID: '' }),
+        credentials: 'include',
+      },
+    );
+    if (!resp.ok) return null;
+    return (await resp.json()) as LoomTranscodedUrl;
+  } catch {
+    return null;
+  }
+}
+
+function extractNextData(html: string): LoomNextDataVideo | null {
+  const nextDataMatch = html.match(
+    /<script\s+id="__NEXT_DATA__"[^>]*>\s*(\{[\s\S]*?\})\s*<\/script/,
+  );
+  if (nextDataMatch) {
+    try {
+      const parsed = JSON.parse(nextDataMatch[1]) as Record<string, unknown>;
+      const props = parsed['props'] as Record<string, unknown> | undefined;
+      const pageProps = props?.['pageProps'] as Record<string, unknown> | undefined;
+      const video = pageProps?.['video'] as LoomNextDataVideo | undefined;
+      if (video) return video;
+    } catch {
+      // fall through
+    }
+  }
+
+  // Try apollo-state based extraction
+  const apolloMatch = html.match(
+    /window\.__APOLLO_STATE__\s*=\s*(\{[\s\S]*?\});\s*<\/script/,
+  );
+  if (apolloMatch) {
+    try {
+      const state = JSON.parse(apolloMatch[1]) as Record<string, unknown>;
+      for (const key of Object.keys(state)) {
+        if (key.startsWith('Video:') || key.startsWith('video:')) {
+          return state[key] as LoomNextDataVideo;
+        }
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return null;
+}
+
+const loomProvider: VideoProvider = {
+  name: 'loom',
+  displayName: 'Loom',
+  version: '1.0.0',
+
+  canHandleUrl(url: string): boolean {
+    return LOOM_URL_RE.test(url);
+  },
+
+  getEmbedPatterns(): RegExp[] {
+    return [/loom\.com\/embed\/([a-f0-9]+)/i];
+  },
+
+  async extractVideoInfo(context: ExtractionContext): Promise<VideoInfo> {
+    const videoId = extractVideoId(context.url);
+    if (!videoId) {
+      throw new Error('Could not extract Loom video ID from URL');
+    }
+
+    const streams: VideoStream[] = [];
+    const subtitles: SubtitleTrack[] = [];
+    let title: string | undefined;
+    let duration: number | undefined;
+    let thumbnail: string | undefined;
+
+    // Fetch share page HTML for embedded data
+    const shareUrl = `https://www.loom.com/share/${videoId}`;
+    let nextData: LoomNextDataVideo | null = null;
+
+    try {
+      const resp = await fetch(shareUrl, { credentials: 'include' });
+      if (resp.ok) {
+        const html = await resp.text();
+        nextData = extractNextData(html);
+      }
+    } catch {
+      // continue with API fallback
+    }
+
+    if (nextData) {
+      title = nextData.name ?? nextData.title;
+      duration = nextData.duration;
+      thumbnail = nextData.thumbnailUrl ?? nextData.thumbnail_url;
+
+      const hlsUrl = nextData.hlsUrl ?? nextData.hls_url;
+      if (hlsUrl) {
+        streams.push({
+          url: hlsUrl,
+          quality: 'auto (HLS)',
+          type: 'muxed',
+          format: 'm3u8',
+        });
+      }
+
+      const mp4Url = nextData.videoUrl ?? nextData.video_url;
+      if (mp4Url) {
+        streams.push({
+          url: mp4Url,
+          quality: 'original',
+          type: 'muxed',
+          format: 'mp4',
+        });
+      }
+
+      // Captions
+      if (nextData.captions) {
+        for (const cap of nextData.captions) {
+          subtitles.push({
+            url: cap.url,
+            language: cap.language ?? 'en',
+            label: cap.label,
+            format: cap.url.endsWith('.srt') ? 'srt' : 'vtt',
+          });
+        }
+      } else if (nextData.transcription?.url) {
+        subtitles.push({
+          url: nextData.transcription.url,
+          language: nextData.transcription.language ?? 'en',
+          label: 'Transcription',
+          format: 'vtt',
+          isAutoGenerated: true,
+        });
+      }
+    }
+
+    // Fallback: try transcoded-url API
+    if (streams.length === 0) {
+      const transcoded = await fetchTranscodedUrl(videoId);
+      if (transcoded?.url) {
+        const isHls = transcoded.url.includes('.m3u8');
+        streams.push({
+          url: transcoded.url,
+          quality: isHls ? 'auto (HLS)' : 'transcoded',
+          type: 'muxed',
+          format: isHls ? 'm3u8' : 'mp4',
+        });
+      }
+    }
+
+    if (streams.length === 0) {
+      throw new Error(
+        'Could not extract any video streams from Loom. The video may be private.',
+      );
+    }
+
+    return {
+      id: generateId(),
+      title: title ?? `Loom Video ${videoId}`,
+      thumbnail,
+      duration,
+      provider: 'loom',
+      pageUrl: context.pageUrl ?? context.url,
+      streams,
+      subtitles,
+      metadata: { loomId: videoId },
+    };
+  },
+};
+
+export default loomProvider;

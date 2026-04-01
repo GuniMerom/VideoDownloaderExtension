@@ -53,6 +53,10 @@ export interface UpdateSettingsMessage {
   settings: Record<string, unknown>;
 }
 
+export interface ClearHistoryMessage {
+  type: 'CLEAR_HISTORY';
+}
+
 // ─── Service Worker → Popup / Content Script ───
 
 export interface AnalyzeUrlResponse {
@@ -101,6 +105,7 @@ export type ExtensionMessage =
   | GetDownloadHistoryMessage
   | GetSettingsMessage
   | UpdateSettingsMessage
+  | ClearHistoryMessage
   | DownloadProgressMessage
   | DownloadCompleteMessage
   | GetPageVideosMessage;

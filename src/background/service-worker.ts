@@ -15,7 +15,7 @@ import type {
   DetectedVideosResponse,
   PageVideosResponse,
 } from '../shared/messages';
-import { getSettings, saveSettings, getDownloadHistory, addToHistory, getDetectedVideosForTab, setDetectedVideosForTab, clearTabData } from '../core/storage';
+import { getSettings, saveSettings, getDownloadHistory, addToHistory, clearHistory, getDetectedVideosForTab, setDetectedVideosForTab, clearTabData } from '../core/storage';
 import { downloadDirect, downloadSegmented, downloadAndMerge, triggerBrowserDownload } from '../core/downloader';
 import { downloadAllSubtitles } from '../core/subtitle-extractor';
 import { isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist } from '../core/hls-parser';
@@ -116,6 +116,11 @@ async function handleMessage(
 
       case 'UPDATE_SETTINGS':
         await saveSettings(message.settings as Partial<ExtensionSettings>);
+        sendResponse({ success: true });
+        break;
+
+      case 'CLEAR_HISTORY':
+        await clearHistory();
         sendResponse({ success: true });
         break;
 

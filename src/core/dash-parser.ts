@@ -102,9 +102,11 @@ function parseSegmentTemplate(
     template.timeline = [];
     const sElements = timelineEl.querySelectorAll('S');
     sElements.forEach((s) => {
+      const dVal = parseInt(getAttr(s, 'd') ?? '0', 10);
+      if (isNaN(dVal) || dVal <= 0) return;
       template.timeline!.push({
         t: getAttr(s, 't') ? parseInt(getAttr(s, 't')!, 10) : undefined,
-        d: parseInt(getAttr(s, 'd')!, 10),
+        d: dVal,
         r: getAttr(s, 'r') ? parseInt(getAttr(s, 'r')!, 10) : undefined,
       });
     });
@@ -145,12 +147,14 @@ function parseSegmentList(
 }
 
 export function parseMPD(xmlContent: string, baseUrl: string): DASHManifest {
+  try {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlContent, 'application/xml');
 
   const parseError = doc.querySelector('parsererror');
   if (parseError) {
-    throw new Error(`Invalid MPD XML: ${parseError.textContent}`);
+    console.warn(`[dash-parser] Invalid MPD XML: ${parseError.textContent}`);
+    return { periods: [] };
   }
 
   // Check for a BaseURL at MPD level
@@ -181,6 +185,11 @@ export function parseMPD(xmlContent: string, baseUrl: string): DASHManifest {
       );
       const lang = getAttr(asEl, 'lang') ?? undefined;
 
+      const asBaseUrlEl = asEl.querySelector(':scope > BaseURL');
+      const asBaseUrl = asBaseUrlEl
+        ? resolveUrl(asBaseUrlEl.textContent?.trim() ?? '', periodBaseUrl)
+        : periodBaseUrl;
+
       // SegmentTemplate at AdaptationSet level
       const asSegTemplate = parseSegmentTemplate(
         asEl.querySelector(':scope > SegmentTemplate'),
@@ -192,10 +201,10 @@ export function parseMPD(xmlContent: string, baseUrl: string): DASHManifest {
       repEls.forEach((repEl) => {
         const repBaseUrlEl = repEl.querySelector(':scope > BaseURL');
         const repBaseUrl = repBaseUrlEl
-          ? resolveUrl(repBaseUrlEl.textContent?.trim() ?? '', periodBaseUrl)
+          ? resolveUrl(repBaseUrlEl.textContent?.trim() ?? '', asBaseUrl)
           : undefined;
 
-        const effectiveBaseUrl = repBaseUrl ?? periodBaseUrl;
+        const effectiveBaseUrl = repBaseUrl ?? asBaseUrl;
 
         // SegmentTemplate at Representation level overrides AdaptationSet level
         const repSegTemplate =
@@ -231,6 +240,10 @@ export function parseMPD(xmlContent: string, baseUrl: string): DASHManifest {
   });
 
   return { periods };
+  } catch (err) {
+    console.warn('[dash-parser] Failed to parse MPD:', err);
+    return { periods: [] };
+  }
 }
 
 export function getVideoRepresentations(parsed: DASHManifest): DASHRepresentation[] {
@@ -338,19 +351,18 @@ export function resolveSegmentUrls(
     }
   } else if (template.duration && template.timescale) {
     // Fixed-duration segments: estimate total count from period duration
-    // Without knowing total duration, generate a reasonable range
     const startNum = template.startNumber ?? 1;
-    const segDuration = template.duration / template.timescale;
-    // Generate up to 10000 segments max (caller should limit if needed)
-    const maxSegments = 10000;
+    const segDurationSec = template.duration / template.timescale;
+    // Without period duration info passed in, generate a reasonable default
+    // Assume 4 hours max content (~14400 seconds)
+    const maxDuration = 14400;
+    const segCount = segDurationSec > 0
+      ? Math.ceil(maxDuration / segDurationSec)
+      : 1;
+    const maxSegments = Math.min(segCount, 10000);
     for (let i = 0; i < maxSegments; i++) {
       const segUrl = expand(template.media, startNum + i);
       urls.push(resolveUrl(segUrl, effectiveBaseUrl));
-      // If we don't know the total, we generate a reasonable batch
-      // The caller should use period duration to limit
-      if (segDuration > 0 && i > 0) {
-        break; // Return first two as sample; caller should compute count
-      }
     }
   }
 

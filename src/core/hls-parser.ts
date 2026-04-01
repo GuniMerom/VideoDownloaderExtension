@@ -31,6 +31,7 @@ export interface HLSMediaPlaylist {
   segments: HLSSegment[];
   totalDuration: number;
   encryption?: HLSEncryption;
+  initSegment?: { url: string; byteRange?: { length: number; offset: number } };
 }
 
 function resolveUrl(relative: string, baseUrl: string): string {
@@ -46,8 +47,13 @@ export function isMasterPlaylist(content: string): boolean {
 }
 
 export function parseMasterPlaylist(content: string, baseUrl: string): HLSMasterPlaylist {
+  try {
+  const trimmedContent = content.trim();
+  if (!trimmedContent.startsWith('#EXTM3U')) {
+    return { type: 'master', variants: [] };
+  }
   const variants: HLSVariant[] = [];
-  const lines = content.split(/\r?\n/);
+  const lines = trimmedContent.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -84,13 +90,22 @@ export function parseMasterPlaylist(content: string, baseUrl: string): HLSMaster
   }
 
   return { type: 'master', variants };
+  } catch {
+    return { type: 'master', variants: [] };
+  }
 }
 
 export function parseMediaPlaylist(content: string, baseUrl: string): HLSMediaPlaylist {
+  try {
+  const trimmedContent = content.trim();
+  if (!trimmedContent.startsWith('#EXTM3U')) {
+    return { type: 'media', segments: [], totalDuration: 0 };
+  }
   const segments: HLSSegment[] = [];
   let totalDuration = 0;
   let encryption: HLSEncryption | undefined;
-  const lines = content.split(/\r?\n/);
+  let initSegment: HLSMediaPlaylist['initSegment'] | undefined;
+  const lines = trimmedContent.split(/\r?\n/);
 
   let currentDuration = 0;
   let currentByteRange: { length: number; offset: number } | undefined;
@@ -139,6 +154,22 @@ export function parseMediaPlaylist(content: string, baseUrl: string): HLSMediaPl
       continue;
     }
 
+    // Parse initialization segment (fMP4)
+    if (line.startsWith('#EXT-X-MAP:')) {
+      const mapAttrs = line.substring('#EXT-X-MAP:'.length);
+      const mapUriMatch = mapAttrs.match(/URI="([^"]+)"/);
+      if (mapUriMatch) {
+        const mapRangeMatch = mapAttrs.match(/BYTERANGE="(\d+)@(\d+)"/);
+        initSegment = {
+          url: resolveUrl(mapUriMatch[1], baseUrl),
+          byteRange: mapRangeMatch
+            ? { length: parseInt(mapRangeMatch[1], 10), offset: parseInt(mapRangeMatch[2], 10) }
+            : undefined,
+        };
+      }
+      continue;
+    }
+
     // Segment URI line
     if (line && !line.startsWith('#')) {
       if (currentDuration > 0) {
@@ -154,7 +185,10 @@ export function parseMediaPlaylist(content: string, baseUrl: string): HLSMediaPl
     }
   }
 
-  return { type: 'media', segments, totalDuration, encryption };
+  return { type: 'media', segments, totalDuration, encryption, initSegment };
+  } catch {
+    return { type: 'media', segments: [], totalDuration: 0 };
+  }
 }
 
 export async function fetchAndParse(
@@ -166,10 +200,15 @@ export async function fetchAndParse(
   }
 
   const content = await response.text();
+  const trimmed = content.trim();
 
-  if (isMasterPlaylist(content)) {
-    return parseMasterPlaylist(content, url);
+  if (!trimmed.startsWith('#EXTM3U')) {
+    return { type: 'media', segments: [], totalDuration: 0 };
   }
 
-  return parseMediaPlaylist(content, url);
+  if (isMasterPlaylist(trimmed)) {
+    return parseMasterPlaylist(trimmed, url);
+  }
+
+  return parseMediaPlaylist(trimmed, url);
 }

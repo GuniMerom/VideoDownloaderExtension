@@ -234,7 +234,7 @@ function injectNetworkInterceptor(): void {
   const STREAM_CONTENT_TYPES = /application\\/(x-mpegURL|dash\\+xml|vnd\\.apple\\.mpegurl)/i;
   const detected = new Set();
 
-  function reportStream(url, type) {
+  function reportStream(url, type, provider) {
     if (!url || detected.has(url)) return;
     detected.add(url);
     try {
@@ -242,6 +242,7 @@ function injectNetworkInterceptor(): void {
         __videoDownloaderStream: true,
         url: url,
         type: type,
+        provider: provider || 'unknown',
         timestamp: Date.now(),
       }, '*');
     } catch(e) {}
@@ -283,6 +284,133 @@ function injectNetworkInterceptor(): void {
     } catch(e) {}
     return originalOpen.apply(this, arguments);
   };
+
+  // ── Player Framework Detection ──
+  function detectPlayerFrameworks() {
+    // Video.js
+    try {
+      if (window.videojs) {
+        var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+        for (var id in players) {
+          if (players[id] && players[id].currentSrc && players[id].currentSrc()) {
+            reportStream(players[id].currentSrc(), classifyUrl(players[id].currentSrc()) || 'mp4', 'videojs');
+          }
+        }
+      }
+      var vjsElements = document.querySelectorAll('video.video-js, video[data-setup]');
+      vjsElements.forEach(function(el) {
+        if (el.src) reportStream(el.src, classifyUrl(el.src) || 'mp4', 'videojs');
+        if (el.currentSrc) reportStream(el.currentSrc, classifyUrl(el.currentSrc) || 'mp4', 'videojs');
+      });
+    } catch(e) {}
+
+    // Plyr
+    try {
+      var plyrElements = document.querySelectorAll('.plyr, [data-plyr-provider]');
+      plyrElements.forEach(function(el) {
+        var video = el.querySelector('video');
+        if (video) {
+          if (video.src) reportStream(video.src, classifyUrl(video.src) || 'mp4', 'plyr');
+          if (video.currentSrc) reportStream(video.currentSrc, classifyUrl(video.currentSrc) || 'mp4', 'plyr');
+        }
+        var provider = el.getAttribute('data-plyr-provider');
+        var embedId = el.getAttribute('data-plyr-embed-id');
+        if (provider && embedId) {
+          reportStream(provider + ':' + embedId, 'mp4', 'plyr');
+        }
+      });
+    } catch(e) {}
+
+    // MediaElement.js
+    try {
+      if (window.mejs && window.mejs.players) {
+        for (var id in window.mejs.players) {
+          var player = window.mejs.players[id];
+          if (player && player.node && player.node.src) {
+            reportStream(player.node.src, classifyUrl(player.node.src) || 'mp4', 'mediaelement');
+          }
+        }
+      }
+      var mejsContainers = document.querySelectorAll('.mejs__container');
+      mejsContainers.forEach(function(el) {
+        var video = el.querySelector('video');
+        if (video) {
+          if (video.src) reportStream(video.src, classifyUrl(video.src) || 'mp4', 'mediaelement');
+          if (video.currentSrc) reportStream(video.currentSrc, classifyUrl(video.currentSrc) || 'mp4', 'mediaelement');
+        }
+      });
+    } catch(e) {}
+
+    // Flowplayer
+    try {
+      if (window.flowplayer) {
+        var fpInstances = typeof window.flowplayer === 'function' && window.flowplayer.instances
+          ? window.flowplayer.instances
+          : [];
+        for (var i = 0; i < fpInstances.length; i++) {
+          var fp = fpInstances[i];
+          if (fp && fp.conf && fp.conf.clip && fp.conf.clip.sources) {
+            fp.conf.clip.sources.forEach(function(s) {
+              if (s.src) reportStream(s.src, classifyUrl(s.src) || 'mp4', 'flowplayer');
+            });
+          }
+        }
+      }
+      var fpElements = document.querySelectorAll('.flowplayer, [data-flowplayer]');
+      fpElements.forEach(function(el) {
+        var video = el.querySelector('video');
+        if (video) {
+          if (video.src) reportStream(video.src, classifyUrl(video.src) || 'mp4', 'flowplayer');
+          if (video.currentSrc) reportStream(video.currentSrc, classifyUrl(video.currentSrc) || 'mp4', 'flowplayer');
+        }
+      });
+    } catch(e) {}
+
+    // hls.js
+    try {
+      if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
+        var videos = document.querySelectorAll('video');
+        videos.forEach(function(v) {
+          if (v.hls && v.hls.url) {
+            reportStream(v.hls.url, 'hls', 'hlsjs');
+          }
+        });
+      }
+    } catch(e) {}
+
+    // dash.js
+    try {
+      if (window.dashjs) {
+        var dashVideos = document.querySelectorAll('video');
+        dashVideos.forEach(function(v) {
+          if (v.dashPlayer && typeof v.dashPlayer.getSource === 'function') {
+            var src = v.dashPlayer.getSource();
+            if (src) reportStream(src, 'dash', 'dashjs');
+          }
+        });
+      }
+      if (window.MediaPlayer) {
+        var mpVideos = document.querySelectorAll('video');
+        mpVideos.forEach(function(v) {
+          if (v.player && typeof v.player.getSource === 'function') {
+            var src = v.player.getSource();
+            if (src) reportStream(src, 'dash', 'dashjs');
+          }
+        });
+      }
+    } catch(e) {}
+  }
+
+  // Run detection periodically: every 3 seconds for 30 seconds after page load
+  var scanCount = 0;
+  var maxScans = 10;
+  var scanInterval = setInterval(function() {
+    try { detectPlayerFrameworks(); } catch(e) {}
+    scanCount++;
+    if (scanCount >= maxScans) clearInterval(scanInterval);
+  }, 3000);
+  // Also run once immediately
+  try { detectPlayerFrameworks(); } catch(e) {}
 })();
 `;
 
@@ -306,9 +434,10 @@ window.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || data.__videoDownloaderStream !== true) return;
 
-  const { url, type, timestamp } = data as {
+  const { url, type, provider, timestamp } = data as {
     url: string;
     type: 'hls' | 'dash' | 'mp4';
+    provider?: string;
     timestamp: number;
   };
 
@@ -326,7 +455,7 @@ window.addEventListener('message', (event) => {
     type: 'stream',
     url,
     title: document.title,
-    provider: 'unknown',
+    provider: provider || 'unknown',
   });
 });
 
