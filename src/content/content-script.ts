@@ -5,6 +5,7 @@ import type { DetectedVideo } from '../shared/types';
 import type {
   ExtensionMessage,
   PageVideosResponse,
+  PageContextFetchResponse,
 } from '../shared/messages';
 
 // ─── State ───
@@ -459,15 +460,99 @@ window.addEventListener('message', (event) => {
   });
 });
 
+// ─── Page-context fetch relay ───
+
+const PAGE_CONTEXT_FETCH_TIMEOUT = 15_000;
+
+/**
+ * Perform a fetch in the page context (which carries the user's cookies)
+ * by injecting a <script> and relaying the result via window.postMessage.
+ */
+function pageContextFetch(url: string, options?: RequestInit): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const requestId = `__vdl_fetch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('Page context fetch timed out'));
+    }, PAGE_CONTEXT_FETCH_TIMEOUT);
+
+    function handler(event: MessageEvent): void {
+      if (event.source !== window) return;
+      const msg = event.data;
+      if (!msg || msg.type !== '__vdl_fetch_response' || msg.requestId !== requestId) return;
+
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+
+      if (msg.error) {
+        reject(new Error(msg.error));
+      } else {
+        resolve(msg.data);
+      }
+    }
+
+    window.addEventListener('message', handler);
+
+    const serializedOptions = options ? JSON.stringify(options) : 'undefined';
+
+    const scriptContent = `
+(function() {
+  var reqId = ${JSON.stringify(requestId)};
+  var url = ${JSON.stringify(url)};
+  var opts = ${serializedOptions};
+  fetch(url, opts)
+    .then(function(r) { return r.text(); })
+    .then(function(text) {
+      window.postMessage({ type: '__vdl_fetch_response', requestId: reqId, data: text }, '*');
+    })
+    .catch(function(e) {
+      window.postMessage({ type: '__vdl_fetch_response', requestId: reqId, error: e.message || String(e) }, '*');
+    });
+})();
+`;
+
+    try {
+      const script = document.createElement('script');
+      script.textContent = scriptContent;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+    } catch {
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      reject(new Error('Script injection blocked by CSP'));
+    }
+  });
+}
+
 // ─── Message handler: respond to popup and service worker queries ───
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, _sender, sendResponse) => {
-    if (message.type === 'GET_PAGE_VIDEOS') {
-      sendResponse({ videos: detectedVideos } satisfies PageVideosResponse);
+    switch (message.type) {
+      case 'GET_PAGE_VIDEOS':
+        sendResponse({ videos: detectedVideos } satisfies PageVideosResponse);
+        return false;
+
+      case 'PAGE_CONTEXT_FETCH': {
+        const { url, options } = message;
+        (async () => {
+          try {
+            const result = await pageContextFetch(url, options);
+            sendResponse({ success: true, data: result } satisfies PageContextFetchResponse);
+          } catch (err) {
+            sendResponse({
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            } satisfies PageContextFetchResponse);
+          }
+        })();
+        return true; // async response
+      }
+
+      default:
+        return false;
     }
-    // Return false for synchronous responses
-    return false;
   },
 );
 

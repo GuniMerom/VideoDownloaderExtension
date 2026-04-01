@@ -43,6 +43,14 @@ export interface DetectedVideo {
   frameId?: number;
 }
 
+/** A detected video that has been (or is being) analyzed for download options. */
+export interface AnalyzedVideo {
+  detected: DetectedVideo;
+  status: 'pending' | 'analyzing' | 'ready' | 'error';
+  videoInfo?: VideoInfo;    // Populated when status === 'ready'
+  error?: string;           // Populated when status === 'error'
+}
+
 export interface DownloadTask {
   id: string;
   videoInfo: VideoInfo;

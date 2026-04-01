@@ -4,6 +4,8 @@ export interface ExtractionContext {
   url: string;
   pageUrl?: string;
   document?: Document;
+  /** Pre-fetched page HTML from the page context (carries user cookies). */
+  pageHtml?: string;
 }
 
 export interface VideoProvider {

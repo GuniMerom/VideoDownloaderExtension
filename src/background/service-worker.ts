@@ -7,6 +7,7 @@ import type {
   DetectedVideo,
   DownloadTask,
   ExtensionSettings,
+  AnalyzedVideo,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
 import type {
@@ -15,7 +16,7 @@ import type {
   DetectedVideosResponse,
   PageVideosResponse,
 } from '../shared/messages';
-import { getSettings, saveSettings, getDownloadHistory, addToHistory, clearHistory, getDetectedVideosForTab, setDetectedVideosForTab, clearTabData } from '../core/storage';
+import { getSettings, saveSettings, getDownloadHistory, addToHistory, clearHistory, getAnalyzedVideosForTab, setAnalyzedVideosForTab, clearTabData } from '../core/storage';
 import { downloadDirect, downloadSegmented, downloadAndMerge, triggerBrowserDownload } from '../core/downloader';
 import { downloadAllSubtitles } from '../core/subtitle-extractor';
 import { isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist } from '../core/hls-parser';
@@ -23,10 +24,13 @@ import { parseMPD, getVideoRepresentations, resolveSegmentUrls } from '../core/d
 import { selectBestStreams } from '../core/quality-selector';
 import { providerRegistry } from '../providers/provider-registry';
 import type { ExtractionContext } from '../providers/provider-interface';
+import type { PageContextFetchResponse } from '../shared/messages';
 
 // ─── In-memory state ───
 
 const activeDownloads = new Map<string, DownloadTask>();
+/** URLs currently being auto-analyzed (prevents duplicate concurrent analysis) */
+const analyzingUrls = new Set<string>();
 
 // ─── Helpers ───
 
@@ -48,7 +52,7 @@ function safeSendMessage(message: ExtensionMessage): void {
 /** Update the extension badge with the number of detected videos for a tab. */
 async function updateBadge(tabId: number): Promise<void> {
   try {
-    const videos = await getDetectedVideosForTab(tabId);
+    const videos = await getAnalyzedVideosForTab(tabId);
     const count = videos.length;
     const text = count > 0 ? String(count) : '';
     await chrome.action.setBadgeText({ text, tabId });
@@ -139,6 +143,37 @@ async function handleMessage(
   }
 }
 
+// ─── Page-context fetch helper ───
+
+/**
+ * Ask the content script running in the given tab to perform a fetch
+ * in the page context. The page-context fetch carries the user's cookies,
+ * which is required for authenticated video platforms (e.g., course sites).
+ */
+async function fetchViaContentScript(
+  tabId: number,
+  url: string,
+  options?: RequestInit,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: 'PAGE_CONTEXT_FETCH', url, options },
+      (response: PageContextFetchResponse | undefined) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (response?.success) {
+          resolve(response.data!);
+        } else {
+          reject(new Error(response?.error || 'Page context fetch failed'));
+        }
+      },
+    );
+  });
+}
+
 // ─── Individual message handlers ───
 
 async function handleVideoDetected(
@@ -154,14 +189,23 @@ async function handleVideoDetected(
     video.id = generateVideoId();
   }
 
-  const existing = await getDetectedVideosForTab(tabId);
+  const existing = await getAnalyzedVideosForTab(tabId);
 
   // Deduplicate by URL
-  const isDuplicate = existing.some((v) => v.url === video.url);
+  const isDuplicate = existing.some((v) => v.detected.url === video.url);
   if (!isDuplicate) {
-    existing.push(video);
-    await setDetectedVideosForTab(tabId, existing);
+    const analyzed: AnalyzedVideo = {
+      detected: video,
+      status: 'analyzing',
+    };
+    existing.push(analyzed);
+    await setAnalyzedVideosForTab(tabId, existing);
     await updateBadge(tabId);
+
+    // Fire-and-forget auto-analysis
+    autoAnalyzeVideo(analyzed, tabId, sender.tab?.url).catch((err) => {
+      console.error('[SW] Auto-analysis failed:', err);
+    });
   }
 }
 
@@ -172,11 +216,12 @@ async function handleStreamDetected(
   const tabId = sender.tab?.id;
   if (tabId == null) return;
 
-  const existing = await getDetectedVideosForTab(tabId);
+  const existing = await getAnalyzedVideosForTab(tabId);
+  const newAnalyzed: AnalyzedVideo[] = [];
 
   for (const manifest of manifests) {
     // Deduplicate
-    if (existing.some((v) => v.url === manifest.url)) continue;
+    if (existing.some((v) => v.detected.url === manifest.url)) continue;
 
     // Try to identify the provider from the manifest URL
     let providerName = 'unknown';
@@ -197,11 +242,23 @@ async function handleStreamDetected(
       tabId,
       frameId: sender.frameId,
     };
-    existing.push(detected);
+    const analyzed: AnalyzedVideo = {
+      detected,
+      status: 'analyzing',
+    };
+    existing.push(analyzed);
+    newAnalyzed.push(analyzed);
   }
 
-  await setDetectedVideosForTab(tabId, existing);
+  await setAnalyzedVideosForTab(tabId, existing);
   await updateBadge(tabId);
+
+  // Fire-and-forget auto-analysis for each new stream
+  for (const analyzed of newAnalyzed) {
+    autoAnalyzeVideo(analyzed, tabId, sender.tab?.url).catch((err) => {
+      console.error('[SW] Auto-analysis of stream failed:', err);
+    });
+  }
 }
 
 async function handleAnalyzeUrl(url: string): Promise<AnalyzeUrlResponse> {
@@ -223,8 +280,78 @@ async function handleAnalyzeUrl(url: string): Promise<AnalyzeUrlResponse> {
 async function handleGetDetectedVideos(
   tabId: number,
 ): Promise<DetectedVideosResponse> {
-  const videos = await getDetectedVideosForTab(tabId);
+  const videos = await getAnalyzedVideosForTab(tabId);
   return { videos };
+}
+
+/**
+ * Auto-analyze a detected video in the background.
+ * On completion, updates storage and notifies the popup via VIDEO_ANALYZED.
+ */
+async function autoAnalyzeVideo(
+  analyzedVideo: AnalyzedVideo,
+  tabId: number,
+  pageUrl?: string,
+): Promise<void> {
+  const url = analyzedVideo.detected.url;
+  if (analyzingUrls.has(url)) return;
+  analyzingUrls.add(url);
+
+  try {
+    const provider = providerRegistry.getProviderForUrl(url)
+      ?? providerRegistry.getProviderForUrl(pageUrl ?? url);
+
+    if (provider) {
+      const context: ExtractionContext = { url, pageUrl: pageUrl ?? url };
+      try {
+        const videoInfo = await provider.extractVideoInfo(context);
+        analyzedVideo.status = 'ready';
+        analyzedVideo.videoInfo = videoInfo;
+      } catch {
+        // Provider extraction failed — try authenticated page-context fetch
+        try {
+          const html = await fetchViaContentScript(tabId, pageUrl ?? url);
+          const contextWithHtml: ExtractionContext = { url, pageUrl: pageUrl ?? url, pageHtml: html };
+          const videoInfo = await provider.extractVideoInfo(contextWithHtml);
+          analyzedVideo.status = 'ready';
+          analyzedVideo.videoInfo = videoInfo;
+        } catch (innerErr) {
+          analyzedVideo.status = 'error';
+          analyzedVideo.error = innerErr instanceof Error ? innerErr.message : String(innerErr);
+        }
+      }
+    } else {
+      // No provider found — mark as error
+      analyzedVideo.status = 'error';
+      analyzedVideo.error = 'No provider found for this URL';
+    }
+  } catch (err) {
+    analyzedVideo.status = 'error';
+    analyzedVideo.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    analyzingUrls.delete(url);
+  }
+
+  // Persist updated analysis to storage
+  try {
+    const videos = await getAnalyzedVideosForTab(tabId);
+    const idx = videos.findIndex((v) => v.detected.id === analyzedVideo.detected.id);
+    if (idx !== -1) {
+      videos[idx] = analyzedVideo;
+    } else {
+      videos.push(analyzedVideo);
+    }
+    await setAnalyzedVideosForTab(tabId, videos);
+  } catch {
+    // Storage update may fail if tab was closed
+  }
+
+  // Notify popup of completed analysis
+  safeSendMessage({
+    type: 'VIDEO_ANALYZED',
+    videoId: analyzedVideo.detected.id,
+    analyzedVideo,
+  });
 }
 
 async function handleDownloadVideo(

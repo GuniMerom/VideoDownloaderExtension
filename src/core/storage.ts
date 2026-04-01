@@ -3,7 +3,7 @@
 import type {
   ExtensionSettings,
   DownloadTask,
-  DetectedVideo,
+  AnalyzedVideo,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
 
@@ -65,25 +65,29 @@ export async function clearHistory(): Promise<void> {
   await storageSet({ [KEYS.DOWNLOAD_HISTORY]: [] });
 }
 
-// ─── Detected Videos per Tab ───
+// ─── Analyzed Videos per Tab ───
 
 function tabKey(tabId: number): string {
   return `${KEYS.TAB_VIDEOS_PREFIX}${tabId}`;
 }
 
-export async function getDetectedVideosForTab(
+export async function getAnalyzedVideosForTab(
   tabId: number,
-): Promise<DetectedVideo[]> {
-  const videos = await storageGet<DetectedVideo[]>(tabKey(tabId));
+): Promise<AnalyzedVideo[]> {
+  const videos = await storageGet<AnalyzedVideo[]>(tabKey(tabId));
   return videos ?? [];
 }
 
-export async function setDetectedVideosForTab(
+export async function setAnalyzedVideosForTab(
   tabId: number,
-  videos: DetectedVideo[],
+  videos: AnalyzedVideo[],
 ): Promise<void> {
   await storageSet({ [tabKey(tabId)]: videos });
 }
+
+// Backward-compatible aliases
+export const getDetectedVideosForTab = getAnalyzedVideosForTab;
+export const setDetectedVideosForTab = setAnalyzedVideosForTab;
 
 export async function clearTabData(tabId: number): Promise<void> {
   await storageRemove(tabKey(tabId));

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import type { VideoInfo, DetectedVideo, DownloadTask, VideoStream, SubtitleTrack } from '../shared/types';
+import type { VideoInfo, DownloadTask, VideoStream, AnalyzedVideo } from '../shared/types';
 import type {
   AnalyzeUrlResponse,
   DetectedVideosResponse,
   DownloadProgressMessage,
   DownloadCompleteMessage,
+  VideoAnalyzedMessage,
 } from '../shared/messages';
 import { LinkInput } from './components/LinkInput';
 import { VideoCard } from './components/VideoCard';
@@ -15,7 +16,7 @@ export function App() {
   const [urlInput, setUrlInput] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [detectedVideos, setDetectedVideos] = useState<DetectedVideo[]>([]);
+  const [detectedVideos, setDetectedVideos] = useState<AnalyzedVideo[]>([]);
   const [downloadTasks, setDownloadTasks] = useState<Map<string, DownloadTask>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -38,9 +39,18 @@ export function App() {
     });
   }, []);
 
-  // Listen for download progress and completion messages
+  // Listen for download progress, completion, and video analyzed messages
   useEffect(() => {
-    const listener = (message: DownloadProgressMessage | DownloadCompleteMessage) => {
+    const listener = (message: DownloadProgressMessage | DownloadCompleteMessage | VideoAnalyzedMessage) => {
+      if (message.type === 'VIDEO_ANALYZED') {
+        setDetectedVideos((prev) =>
+          prev.map((v) =>
+            v.detected.id === message.videoId ? message.analyzedVideo : v
+          )
+        );
+        return;
+      }
+
       if (message.type === 'DOWNLOAD_PROGRESS') {
         setDownloadTasks((prev) => {
           const next = new Map(prev);
@@ -133,12 +143,51 @@ export function App() {
     []
   );
 
-  const handleDetectedDownload = useCallback(
-    (video: DetectedVideo) => {
-      // Create a minimal VideoInfo from the detected video and trigger analysis
-      handleAnalyze(video.url);
+  const handleRetry = useCallback(
+    async (video: AnalyzedVideo) => {
+      // Set status to analyzing while we retry
+      setDetectedVideos((prev) =>
+        prev.map((v) =>
+          v.detected.id === video.detected.id
+            ? { ...v, status: 'analyzing' as const, error: undefined }
+            : v
+        )
+      );
+
+      try {
+        const response: AnalyzeUrlResponse = await chrome.runtime.sendMessage({
+          type: 'ANALYZE_URL',
+          url: video.detected.url,
+        });
+
+        if (response.success && response.videoInfo) {
+          setDetectedVideos((prev) =>
+            prev.map((v) =>
+              v.detected.id === video.detected.id
+                ? { ...v, status: 'ready' as const, videoInfo: response.videoInfo, error: undefined }
+                : v
+            )
+          );
+        } else {
+          setDetectedVideos((prev) =>
+            prev.map((v) =>
+              v.detected.id === video.detected.id
+                ? { ...v, status: 'error' as const, error: response.error || 'Analysis failed' }
+                : v
+            )
+          );
+        }
+      } catch (err) {
+        setDetectedVideos((prev) =>
+          prev.map((v) =>
+            v.detected.id === video.detected.id
+              ? { ...v, status: 'error' as const, error: err instanceof Error ? err.message : 'Unexpected error' }
+              : v
+          )
+        );
+      }
     },
-    [handleAnalyze]
+    []
   );
 
   const activeTasks = Array.from(downloadTasks.values());
@@ -215,34 +264,58 @@ export function App() {
           {detectedVideos.length > 0 && (
             <section class="section">
               <h2 class="section-title">
-                <span class="section-icon">📡</span> Detected on this page
+                <span class="section-icon">📡</span> Videos on this page ({detectedVideos.length})
               </h2>
               <div class="detected-list">
                 {detectedVideos.map((video) => (
-                  <div class="detected-item" key={video.id}>
-                    <div class="detected-info">
-                      {video.thumbnail && (
-                        <img
-                          class="detected-thumb"
-                          src={video.thumbnail}
-                          alt=""
-                        />
-                      )}
-                      <div class="detected-meta">
-                        <span class="detected-title">
-                          {video.title || 'Untitled Video'}
-                        </span>
-                        <span class={`provider-badge provider-${video.provider.toLowerCase()}`}>
-                          {video.provider}
-                        </span>
+                  <div key={video.detected.id}>
+                    {video.status === 'ready' && video.videoInfo ? (
+                      <VideoCard videoInfo={video.videoInfo} onDownload={handleDownload} />
+                    ) : video.status === 'analyzing' ? (
+                      <div class="detected-item">
+                        <div class="detected-info">
+                          <div class="detected-meta">
+                            <span class={`provider-badge provider-${video.detected.provider.toLowerCase()}`}>
+                              {video.detected.provider}
+                            </span>
+                            <span class="detected-title">Analyzing {video.detected.provider} video...</span>
+                          </div>
+                        </div>
+                        <div class="loading-spinner" />
                       </div>
-                    </div>
-                    <button
-                      class="btn btn-sm btn-primary"
-                      onClick={() => handleDetectedDownload(video)}
-                    >
-                      Download ▾
-                    </button>
+                    ) : video.status === 'error' ? (
+                      <div class="detected-item">
+                        <div class="detected-info">
+                          <div class="detected-meta">
+                            <span class={`provider-badge provider-${video.detected.provider.toLowerCase()}`}>
+                              {video.detected.provider}
+                            </span>
+                            <span class="detected-title error-text">
+                              {video.error || 'Analysis failed'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          class="btn btn-sm btn-primary"
+                          onClick={() => handleRetry(video)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ) : (
+                      <div class="detected-item">
+                        <div class="detected-info">
+                          <div class="detected-meta">
+                            <span class={`provider-badge provider-${video.detected.provider.toLowerCase()}`}>
+                              {video.detected.provider}
+                            </span>
+                            <span class="detected-title">
+                              Detected {video.detected.provider} video — waiting for analysis...
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -1,7 +1,7 @@
 // Message type definitions for extension communication
 // Content Script ↔ Service Worker ↔ Popup
 
-import type { DetectedVideo, VideoInfo, VideoStream, DownloadTask } from './types';
+import type { DetectedVideo, VideoInfo, VideoStream, DownloadTask, AnalyzedVideo } from './types';
 
 // ─── Content Script → Service Worker ───
 
@@ -66,7 +66,7 @@ export interface AnalyzeUrlResponse {
 }
 
 export interface DetectedVideosResponse {
-  videos: DetectedVideo[];
+  videos: AnalyzedVideo[];
 }
 
 export interface DownloadProgressMessage {
@@ -81,6 +81,38 @@ export interface DownloadCompleteMessage {
   type: 'DOWNLOAD_COMPLETE';
   taskId: string;
   filename: string;
+}
+
+export interface VideoAnalyzedMessage {
+  type: 'VIDEO_ANALYZED';
+  videoId: string;
+  analyzedVideo: AnalyzedVideo;
+}
+
+// ─── Service Worker → Content Script ───
+
+export interface PageContextFetchMessage {
+  type: 'PAGE_CONTEXT_FETCH';
+  url: string;
+  options?: RequestInit;
+}
+
+export interface PageContextFetchResponse {
+  success: boolean;
+  data?: string;
+  error?: string;
+}
+
+export interface PageContextExtractMessage {
+  type: 'PAGE_CONTEXT_EXTRACT';
+  url: string;
+  provider: string;
+}
+
+export interface PageContextExtractResponse {
+  success: boolean;
+  videoInfo?: VideoInfo;
+  error?: string;
 }
 
 // ─── Content Script ↔ Popup ───
@@ -108,4 +140,7 @@ export type ExtensionMessage =
   | ClearHistoryMessage
   | DownloadProgressMessage
   | DownloadCompleteMessage
-  | GetPageVideosMessage;
+  | GetPageVideosMessage
+  | PageContextFetchMessage
+  | PageContextExtractMessage
+  | VideoAnalyzedMessage;
