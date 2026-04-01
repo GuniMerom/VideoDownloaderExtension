@@ -7,7 +7,8 @@
     "dev": "webpack --mode=development --watch",
     "build": "webpack --mode=production",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validate": "node tests/validate-vimeo.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
