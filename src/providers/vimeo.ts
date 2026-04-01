@@ -66,34 +66,91 @@ async function fetchConfig(videoId: string, pageUrl?: string): Promise<VimeoConf
       return resp.json() as Promise<VimeoConfig>;
     }
   } catch {
-    // /config endpoint blocked or failed — fall through to Strategy 2
+    // /config endpoint blocked or failed — fall through
   }
 
   // Strategy 2: Fetch the player page HTML and parse window.playerConfig
-  // This works for private/embedded videos when we set the correct Referer
-  const referer = pageUrl ?? 'https://vimeo.com/';
-  const playerUrl = `https://player.vimeo.com/video/${videoId}`;
-  const resp = await fetch(playerUrl, {
-    headers: {
-      Referer: referer,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
-  if (!resp.ok) {
-    throw new Error(`Vimeo player page fetch failed: ${resp.status}`);
-  }
-
-  const html = await resp.text();
-  const configMatch = html.match(/window\.playerConfig\s*=\s*(\{.*\})/);
-  if (!configMatch) {
-    throw new Error('Could not find playerConfig in Vimeo player page');
-  }
-
+  // Note: the service worker can't set Referer (forbidden header), and Vimeo
+  // checks Referer for private embeds. This only works if Vimeo doesn't require
+  // a specific Referer for this video.
   try {
-    return JSON.parse(configMatch[1]) as VimeoConfig;
+    const playerUrl = `https://player.vimeo.com/video/${videoId}`;
+    const resp = await fetch(playerUrl);
+    if (resp.ok) {
+      const html = await resp.text();
+      const configMatch = html.match(/window\.playerConfig\s*=\s*(\{.*\})/);
+      if (configMatch) {
+        return JSON.parse(configMatch[1]) as VimeoConfig;
+      }
+    }
   } catch {
-    throw new Error('Failed to parse Vimeo playerConfig JSON');
+    // HTML fetch failed — fall through
   }
+
+  // Strategy 3: Extract playerConfig from the Vimeo iframe via chrome.scripting.
+  // The iframe already has the config loaded in its DOM context.
+  // This works for private embeds because the iframe was loaded with the correct
+  // Referer by the browser.
+  try {
+    const config = await extractConfigFromIframe(videoId);
+    if (config) return config;
+  } catch {
+    // Iframe extraction failed — fall through
+  }
+
+  throw new Error(
+    'Vimeo config fetch failed: video may be private. ' +
+    'Ensure the video is playing on the page and try again.',
+  );
+}
+
+/**
+ * Extract window.playerConfig from inside a Vimeo iframe using chrome.scripting.
+ * The iframe loaded the config with the correct Referer, so it's available in its DOM.
+ */
+async function extractConfigFromIframe(videoId: string): Promise<VimeoConfig | null> {
+  // Find the tab that has this Vimeo iframe
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id) return null;
+
+  // Execute script inside all frames to find the one with our video
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    func: (targetVideoId: string) => {
+      // Check if this frame is a Vimeo player for our video
+      if (!window.location.href.includes('player.vimeo.com')) return null;
+      if (!window.location.href.includes(targetVideoId)) return null;
+
+      // Try to get playerConfig from the window object
+      const config = (window as unknown as Record<string, unknown>).playerConfig;
+      if (config) return JSON.stringify(config);
+
+      // Fallback: parse from script tags in the document
+      const scripts = document.querySelectorAll('script');
+      for (const script of scripts) {
+        const text = script.textContent ?? '';
+        const match = text.match(/window\.playerConfig\s*=\s*(\{.*\})/);
+        if (match) return match[1];
+      }
+
+      return null;
+    },
+    args: [videoId],
+  });
+
+  // Find the result from the Vimeo iframe frame
+  for (const result of results) {
+    if (result.result) {
+      try {
+        return JSON.parse(result.result) as VimeoConfig;
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
 }
 
 const vimeoProvider: VideoProvider = {
