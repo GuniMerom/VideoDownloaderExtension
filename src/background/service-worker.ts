@@ -469,25 +469,37 @@ async function executeDownload(task: DownloadTask): Promise<void> {
     } else if (isSegmented) {
       // HLS/DASH segmented stream — resolve manifest then download via offscreen document
       console.log('[SW] Resolving manifest to segments:', stream.url.substring(0, 100));
-      const segmentUrls = await resolveManifestToSegments(stream.url);
-      console.log(`[SW] Found ${segmentUrls.length} segments, delegating to offscreen document...`);
+      const resolved = await resolveManifestToSegments(stream.url);
+      console.log(`[SW] Video: ${resolved.videoSegments.length} segments, Audio: ${resolved.audioSegments?.length ?? 'none'}`);
 
       await ensureOffscreen();
 
-      const result = await chrome.runtime.sendMessage({
-        type: 'OFFSCREEN_DOWNLOAD_SEGMENTS',
-        segmentUrls,
-        taskId: task.id,
-      }) as { blobUrl?: string; size?: number; error?: string };
+      let result: { blobUrl?: string; size?: number; error?: string };
+
+      if (resolved.audioSegments && resolved.audioSegments.length > 0) {
+        // Has separate audio track — download both and merge in offscreen doc
+        console.log('[SW] Merging video + audio tracks...');
+        result = await chrome.runtime.sendMessage({
+          type: 'OFFSCREEN_MERGE_TRACKS',
+          videoSegmentUrls: resolved.videoSegments,
+          audioSegmentUrls: resolved.audioSegments,
+          taskId: task.id,
+        }) as { blobUrl?: string; size?: number; error?: string };
+      } else {
+        // Video-only (already muxed)
+        result = await chrome.runtime.sendMessage({
+          type: 'OFFSCREEN_DOWNLOAD_SEGMENTS',
+          segmentUrls: resolved.videoSegments,
+          taskId: task.id,
+        }) as { blobUrl?: string; size?: number; error?: string };
+      }
 
       if (result.error) {
         throw new Error(result.error);
       }
 
-      console.log(`[SW] Offscreen download complete, size: ${result.size} bytes`);
+      console.log(`[SW] Download complete, size: ${result.size} bytes`);
       await downloadDirect(result.blobUrl!, filename);
-
-      // Clean up the offscreen document
       await chrome.offscreen.closeDocument().catch(() => {});
     } else {
       // Fallback: treat as direct download
@@ -565,13 +577,16 @@ function getFileExtension(stream: VideoStream): string {
 }
 
 /**
- * Resolve an HLS/DASH manifest URL into an array of actual segment URLs.
- * For HLS: fetches the manifest, picks the highest-quality variant if master,
- * then returns segment URLs from the media playlist.
- * For DASH: fetches the MPD, picks the highest-bandwidth video representation,
- * and resolves segment URLs from templates or segment lists.
+ * Resolve an HLS/DASH manifest URL into segment URLs for downloading.
+ * Returns { videoSegments, audioSegments? } where audio is included if the
+ * HLS manifest uses separate audio tracks (common for Vimeo).
  */
-async function resolveManifestToSegments(manifestUrl: string): Promise<string[]> {
+interface ResolvedSegments {
+  videoSegments: string[];
+  audioSegments?: string[];
+}
+
+async function resolveManifestToSegments(manifestUrl: string): Promise<ResolvedSegments> {
   console.log('[SW] Fetching manifest:', manifestUrl.substring(0, 120));
   const response = await fetch(manifestUrl);
   if (!response.ok) {
@@ -581,46 +596,68 @@ async function resolveManifestToSegments(manifestUrl: string): Promise<string[]>
   console.log(`[SW] Manifest fetched: ${text.length} bytes, starts with: ${text.substring(0, 50)}`);
 
   if (text.trimStart().startsWith('#EXTM3U') || manifestUrl.includes('.m3u8')) {
-    // HLS manifest
     if (isMasterPlaylist(text)) {
       const master = parseMasterPlaylist(text, manifestUrl);
       if (master.variants.length === 0) {
         throw new Error('No HLS variants found in master playlist');
       }
-      // Pick highest bandwidth variant
       const best = master.variants.sort((a, b) => b.bandwidth - a.bandwidth)[0];
-      // Fetch and parse the media playlist
+
+      // Parse the video media playlist
       const mediaResp = await fetch(best.url);
       const mediaText = await mediaResp.text();
       const media = parseMediaPlaylist(mediaText, best.url);
-      const urls = media.segments.map(s => s.url);
-      // Prepend init segment (fMP4 requires ftyp+moov header)
+      const videoUrls = media.segments.map(s => s.url);
       if (media.initSegment?.url) {
-        urls.unshift(media.initSegment.url);
+        videoUrls.unshift(media.initSegment.url);
       }
-      return urls;
+
+      // Check for separate audio track in master playlist
+      const audioMatch = text.match(/#EXT-X-MEDIA:.*?TYPE=AUDIO.*?URI="([^"]+)"/);
+      let audioUrls: string[] | undefined;
+      if (audioMatch) {
+        const audioPlaylistUrl = new URL(audioMatch[1], manifestUrl).href;
+        console.log('[SW] Separate audio track found, fetching:', audioPlaylistUrl.substring(0, 100));
+        try {
+          const audioResp = await fetch(audioPlaylistUrl);
+          const audioText = await audioResp.text();
+          const audioMedia = parseMediaPlaylist(audioText, audioPlaylistUrl);
+          audioUrls = audioMedia.segments.map(s => s.url);
+          if (audioMedia.initSegment?.url) {
+            audioUrls.unshift(audioMedia.initSegment.url);
+          }
+          console.log(`[SW] Audio: ${audioUrls.length} segments (including init)`);
+        } catch (audioErr) {
+          console.warn('[SW] Audio track fetch failed (non-fatal):', audioErr);
+        }
+      }
+
+      return { videoSegments: videoUrls, audioSegments: audioUrls };
     } else {
+      // Direct media playlist (specific variant selected by user)
       const media = parseMediaPlaylist(text, manifestUrl);
       const urls = media.segments.map(s => s.url);
       if (media.initSegment?.url) {
         urls.unshift(media.initSegment.url);
       }
-      return urls;
+
+      // If this is a video-only variant, try to find audio from the master playlist
+      // The variant URL was derived from a master — reconstruct the master URL
+      // by going up to the primary playlist level
+      // For now, return video-only; the caller should handle audio separately
+      return { videoSegments: urls };
     }
   } else if (manifestUrl.includes('.mpd') || text.trimStart().startsWith('<?xml') || text.trimStart().startsWith('<MPD')) {
-    // DASH manifest
     const parsed = parseMPD(text, manifestUrl);
     const videoReps = getVideoRepresentations(parsed);
     if (videoReps.length === 0) {
       throw new Error('No DASH video representations found');
     }
-    // Pick highest bandwidth representation
-    const best = videoReps[0]; // already sorted by bandwidth desc
-    return resolveSegmentUrls(best, manifestUrl);
+    const best = videoReps[0];
+    return { videoSegments: resolveSegmentUrls(best, manifestUrl) };
   }
 
-  // Fallback: treat the URL itself as a single segment
-  return [manifestUrl];
+  return { videoSegments: [manifestUrl] };
 }
 
 // ─── Tab lifecycle (registered at module scope) ───

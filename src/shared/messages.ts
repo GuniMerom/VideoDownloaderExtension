@@ -133,6 +133,13 @@ export interface OffscreenDownloadMessage {
   taskId: string;
 }
 
+export interface OffscreenMergeTracksMessage {
+  type: 'OFFSCREEN_MERGE_TRACKS';
+  videoSegmentUrls: string[];
+  audioSegmentUrls: string[];
+  taskId: string;
+}
+
 export interface OffscreenProgressMessage {
   type: 'OFFSCREEN_PROGRESS';
   taskId: string;
@@ -159,4 +166,5 @@ export type ExtensionMessage =
   | PageContextExtractMessage
   | VideoAnalyzedMessage
   | OffscreenDownloadMessage
+  | OffscreenMergeTracksMessage
   | OffscreenProgressMessage;
