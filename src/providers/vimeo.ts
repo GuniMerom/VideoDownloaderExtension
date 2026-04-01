@@ -189,40 +189,65 @@ const vimeoProvider: VideoProvider = {
       });
     }
 
-    // HLS master playlist
+    // HLS master playlist — parse it to extract individual quality variants
     const hls = config.request?.files?.hls;
     if (hls?.cdns) {
       const cdnKey = hls.default_cdn ?? Object.keys(hls.cdns)[0];
       const hlsUrl = hls.cdns[cdnKey]?.url;
       if (hlsUrl) {
+        // Add the master playlist as "auto" option
         streams.push({
           url: hlsUrl,
           quality: 'auto (HLS)',
           type: 'muxed',
           format: 'hls',
         });
+
+        // Try to fetch and parse the master playlist to list individual qualities
+        try {
+          const masterResp = await fetch(hlsUrl);
+          if (masterResp.ok) {
+            const masterText = await masterResp.text();
+            const lines = masterText.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+              const bwMatch = line.match(/BANDWIDTH=(\d+)/);
+              const resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
+              // Next non-comment line is the variant URL
+              let variantUrl = '';
+              for (let j = i + 1; j < lines.length; j++) {
+                const next = lines[j].trim();
+                if (next && !next.startsWith('#')) {
+                  variantUrl = next;
+                  break;
+                }
+              }
+              if (variantUrl && bwMatch) {
+                const resolvedUrl = variantUrl.startsWith('http')
+                  ? variantUrl
+                  : new URL(variantUrl, hlsUrl).href;
+                const resolution = resMatch?.[1];
+                const height = resolution?.split('x')[1];
+                streams.push({
+                  url: resolvedUrl,
+                  quality: height ? `${height}p` : `${Math.round(parseInt(bwMatch[1]) / 1000)}kbps`,
+                  resolution,
+                  bandwidth: parseInt(bwMatch[1]),
+                  type: 'muxed',
+                  format: 'hls',
+                });
+              }
+            }
+          }
+        } catch {
+          // Parsing individual qualities is best-effort
+        }
       }
     }
 
-    // DASH streams (common for private/embedded videos)
-    const dash = config.request?.files?.dash;
-    if (dash?.cdns) {
-      const cdnKey = dash.default_cdn ?? Object.keys(dash.cdns)[0];
-      const cdn = dash.cdns[cdnKey];
-      const dashUrl = cdn?.avc_url ?? cdn?.url;
-      if (dashUrl) {
-        const resolution = config.video?.width && config.video?.height
-          ? `${config.video.width}x${config.video.height}`
-          : undefined;
-        streams.push({
-          url: dashUrl,
-          quality: resolution ? `${config.video!.height}p (DASH)` : 'auto (DASH)',
-          resolution,
-          type: 'muxed',
-          format: 'dash',
-        });
-      }
-    }
+    // Note: Vimeo DASH uses a proprietary playlist.json format, not standard MPD.
+    // We skip DASH and use HLS instead, which provides the same quality variants.
 
     // Text tracks / subtitles
     const textTracks = config.request?.text_tracks ?? [];

@@ -444,17 +444,11 @@ async function executeDownload(task: DownloadTask): Promise<void> {
     } else if (isSegmented) {
       // HLS/DASH segmented stream — resolve manifest to actual segment URLs
       console.log('[SW] Resolving manifest to segments:', stream.url.substring(0, 100));
-      try {
-        const segmentUrls = await resolveManifestToSegments(stream.url);
-        console.log(`[SW] Found ${segmentUrls.length} segments, downloading...`);
-        const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
-        console.log(`[SW] Segments downloaded, total size: ${segmentBlob.size} bytes`);
-        await triggerBrowserDownload(segmentBlob, filename);
-      } catch (segErr) {
-        // Segmented download failed — try direct download as fallback
-        console.warn('[SW] Segmented download failed, trying direct:', segErr);
-        await downloadDirect(stream.url, filename);
-      }
+      const segmentUrls = await resolveManifestToSegments(stream.url);
+      console.log(`[SW] Found ${segmentUrls.length} segments, downloading...`);
+      const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
+      console.log(`[SW] Segments downloaded, total size: ${segmentBlob.size} bytes`);
+      await triggerBrowserDownload(segmentBlob, filename);
     } else {
       // Fallback: treat as direct download
       await downloadDirect(stream.url, filename);
@@ -538,10 +532,15 @@ function getFileExtension(stream: VideoStream): string {
  * and resolves segment URLs from templates or segment lists.
  */
 async function resolveManifestToSegments(manifestUrl: string): Promise<string[]> {
+  console.log('[SW] Fetching manifest:', manifestUrl.substring(0, 120));
   const response = await fetch(manifestUrl);
+  if (!response.ok) {
+    throw new Error(`Manifest fetch failed: HTTP ${response.status} ${response.statusText}`);
+  }
   const text = await response.text();
+  console.log(`[SW] Manifest fetched: ${text.length} bytes, starts with: ${text.substring(0, 50)}`);
 
-  if (manifestUrl.includes('.m3u8') || text.trimStart().startsWith('#EXTM3U')) {
+  if (text.trimStart().startsWith('#EXTM3U') || manifestUrl.includes('.m3u8')) {
     // HLS manifest
     if (isMasterPlaylist(text)) {
       const master = parseMasterPlaylist(text, manifestUrl);
