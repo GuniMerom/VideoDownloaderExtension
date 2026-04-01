@@ -1,0 +1,442 @@
+- generic [ref=e4]:
+  - navigation:
+    - link "מעבר לתוכן הראשי" [ref=e5] [cursor=pointer]:
+      - /url: "#main"
+    - link "מעבר לתוכן עיניינים" [ref=e6] [cursor=pointer]:
+      - /url: "#navigation"
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e11]: G
+      - generic:
+        - list
+    - generic [ref=e12]:
+      - paragraph [ref=e13]: דונבורי- One Bowl Japan
+      - paragraph [ref=e14]:
+        - generic [ref=e15]: פרק 1- ברוכים הבאים -
+        - text: איך אני מציע לעבוד עם הקורס הזה?
+    - generic [ref=e16]:
+      - generic [ref=e20]: הקודם
+      - generic [ref=e23]: תוכן הקורס
+      - link "הבא" [ref=e25] [cursor=pointer]:
+        - /url: /donburi/P9ZqHM0
+        - generic [ref=e26]: הבא
+  - generic [ref=e30]:
+    - text: A C w
+    - generic [ref=e32]:
+      - main "מידע על הקורס והרשמה":
+        - iframe [ref=e33]:
+          
+    - paragraph [ref=e35]:
+      - generic [ref=e36]: פרק 1- ברוכים הבאים | איך אני מציע לעבוד עם הקורס הזה?
+      - time [ref=e37]: 00:00:58
+  - navigation "תוכן עניינים" [ref=e41]:
+    - generic [ref=e45]:
+      - list [ref=e46]:
+        - generic [ref=e47]:
+          - listitem [ref=e48] [cursor=pointer]:
+            - generic [ref=e49]:
+              - img [ref=e50]
+              - generic [ref=e53]: 1/1
+            - generic "פרק 1 פרק 1- ברוכים הבאים מכיל 1 שיעורים." [ref=e55]:
+              - generic [ref=e56]: פרק 1- ברוכים הבאים
+          - listitem [ref=e58] [cursor=pointer]:
+            - generic "שיעור וידאו איך אני מציע לעבוד עם הקורס הזה?" [ref=e59]:
+              - generic [ref=e60]:
+                - link "איך אני מציע לעבוד עם הקורס הזה?" [ref=e61]:
+                  - /url: /donburi/fMKNQUk
+                  - generic [ref=e63]: איך אני מציע לעבוד עם הקורס הזה?
+                - img [ref=e64]
+              - generic [ref=e67]:
+                - generic [ref=e68]: וידאו
+                - generic [ref=e69]: ·
+                - generic [ref=e70]: (00:00:58)
+      - list [ref=e71]:
+        - generic [ref=e72]:
+          - listitem [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]:
+              - img [ref=e75]
+              - generic [ref=e78]: 2/3
+            - generic "פרק 2 פרק 2- מה זה בכלל דונבורי מכיל 3 שיעורים." [ref=e80]:
+              - generic [ref=e81]: פרק 2- מה זה בכלל דונבורי
+          - listitem [ref=e83] [cursor=pointer]:
+            - generic "שיעור וידאו מה זה בכלל דונבורי?" [ref=e84]:
+              - link "מה זה בכלל דונבורי?" [ref=e86]:
+                - /url: /donburi/P9ZqHM0
+                - generic [ref=e88]: מה זה בכלל דונבורי?
+              - generic [ref=e89]:
+                - generic [ref=e90]: וידאו
+                - generic [ref=e91]: ·
+                - generic [ref=e92]: (00:00:39)
+          - listitem [ref=e93] [cursor=pointer]:
+            - generic "שיעור וידאו למה זה מוגש אורז ומעל? - הרעיון ארוחה בקערה אחת" [ref=e94]:
+              - generic [ref=e95]:
+                - link "למה זה מוגש אורז ומעל? - הרעיון ארוחה בקערה אחת" [ref=e96]:
+                  - /url: /donburi/zvVrRyg
+                  - generic [ref=e98]: למה זה מוגש אורז ומעל? - הרעיון ארוחה בקערה אחת
+                - img [ref=e99]
+              - generic [ref=e102]:
+                - generic [ref=e103]: וידאו
+                - generic [ref=e104]: ·
+                - generic [ref=e105]: (00:00:39)
+          - listitem [ref=e106] [cursor=pointer]:
+            - generic "שיעור וידאו מתי נהוג לאכול?" [ref=e107]:
+              - generic [ref=e108]:
+                - link "מתי נהוג לאכול?" [ref=e109]:
+                  - /url: /donburi/TTC50ao
+                  - generic [ref=e111]: מתי נהוג לאכול?
+                - img [ref=e112]
+              - generic [ref=e115]:
+                - generic [ref=e116]: וידאו
+                - generic [ref=e117]: ·
+                - generic [ref=e118]: (00:01:07)
+      - list [ref=e119]:
+        - generic [ref=e120]:
+          - listitem [ref=e121] [cursor=pointer]:
+            - generic [ref=e122]:
+              - img [ref=e123]
+              - generic [ref=e126]: 3/7
+            - generic "פרק 3 פרק 3- בואו נדבר על אורז! מכיל 7 שיעורים." [ref=e128]:
+              - generic [ref=e129]: פרק 3- בואו נדבר על אורז!
+          - listitem [ref=e131] [cursor=pointer]:
+            - generic "שיעור וידאו אורז - זנים של אורז - האורז של דונבורי" [ref=e132]:
+              - generic [ref=e133]:
+                - link "אורז - זנים של אורז - האורז של דונבורי" [ref=e134]:
+                  - /url: /donburi/wzccTwA
+                  - generic [ref=e136]: אורז - זנים של אורז - האורז של דונבורי
+                - img [ref=e137]
+              - generic [ref=e140]:
+                - generic [ref=e141]: וידאו
+                - generic [ref=e142]: ·
+                - generic [ref=e143]: (00:01:44)
+          - listitem [ref=e144] [cursor=pointer]:
+            - generic "שיעור וידאו איך מטפלים באורז? איך מבשלים אורז נכון" [ref=e145]:
+              - link "איך מטפלים באורז? איך מבשלים אורז נכון" [ref=e147]:
+                - /url: /donburi/mtN8XUo
+                - generic [ref=e149]: איך מטפלים באורז? איך מבשלים אורז נכון
+              - generic [ref=e150]:
+                - generic [ref=e151]: וידאו
+                - generic [ref=e152]: ·
+                - generic [ref=e153]: (00:01:14)
+          - listitem [ref=e154] [cursor=pointer]:
+            - generic "שיעור וידאו איך לשטוף אורז לפני הבישול" [ref=e155]:
+              - generic [ref=e156]:
+                - link "איך לשטוף אורז לפני הבישול" [ref=e157]:
+                  - /url: /donburi/3_NKfHc
+                  - generic [ref=e159]: איך לשטוף אורז לפני הבישול
+                - img [ref=e160]
+              - generic [ref=e163]:
+                - generic [ref=e164]: וידאו
+                - generic [ref=e165]: ·
+                - generic [ref=e166]: (00:04:03)
+          - listitem [ref=e167] [cursor=pointer]:
+            - generic "שיעור וידאו ייבוש האורז" [ref=e168]:
+              - generic [ref=e169]:
+                - link "ייבוש האורז" [ref=e170]:
+                  - /url: /donburi/tjeYRyo
+                  - generic [ref=e172]: ייבוש האורז
+                - img [ref=e173]
+              - generic [ref=e176]:
+                - generic [ref=e177]: וידאו
+                - generic [ref=e178]: ·
+                - generic [ref=e179]: (00:00:48)
+          - listitem [ref=e180] [cursor=pointer]:
+            - generic "שיעור וידאו השריית האורז לפני הבישול" [ref=e181]:
+              - link "השריית האורז לפני הבישול" [ref=e183]:
+                - /url: /donburi/4Esuquo
+                - generic [ref=e185]: השריית האורז לפני הבישול
+              - generic [ref=e186]:
+                - generic [ref=e187]: וידאו
+                - generic [ref=e188]: ·
+                - generic [ref=e189]: (00:02:17)
+          - listitem [ref=e190] [cursor=pointer]:
+            - generic "שיעור וידאו איך לבשל אורז לדונבורי?" [ref=e191]:
+              - link "איך לבשל אורז לדונבורי?" [ref=e193]:
+                - /url: /donburi/cdFHZP0
+                - generic [ref=e195]: איך לבשל אורז לדונבורי?
+              - generic [ref=e196]:
+                - generic [ref=e197]: וידאו
+                - generic [ref=e198]: ·
+                - generic [ref=e199]: (00:03:33)
+          - listitem [ref=e200] [cursor=pointer]:
+            - generic "שיעור וידאו איפה אפשר לקנות סיר חשמלי בארץ ואיך יודעים מה לבחור?" [ref=e201]:
+              - link "איפה אפשר לקנות סיר חשמלי בארץ ואיך יודעים מה לבחור?" [ref=e203]:
+                - /url: /donburi/G6fZdeo
+                - generic [ref=e205]: איפה אפשר לקנות סיר חשמלי בארץ ואיך יודעים מה לבחור?
+              - generic [ref=e206]:
+                - generic [ref=e207]: וידאו
+                - generic [ref=e208]: ·
+                - generic [ref=e209]: (00:03:07)
+      - list [ref=e210]:
+        - generic [ref=e211]:
+          - listitem [ref=e212] [cursor=pointer]:
+            - generic [ref=e213]:
+              - img [ref=e214]
+              - generic [ref=e217]: 0/13
+            - generic "פרק 4 פרק 4 - חומרי גלם נפוצים במטבח היפני מכיל 13 שיעורים." [ref=e219]:
+              - generic [ref=e220]: פרק 4 - חומרי גלם נפוצים במטבח היפני
+          - listitem [ref=e222] [cursor=pointer]:
+            - generic "שיעור וידאו הסבר על חומרי גלם יפנים בסיסיים" [ref=e223]:
+              - link "הסבר על חומרי גלם יפנים בסיסיים" [ref=e225]:
+                - /url: /donburi/j8ZM0_8
+                - generic [ref=e227]: הסבר על חומרי גלם יפנים בסיסיים
+              - generic [ref=e228]:
+                - generic [ref=e229]: וידאו
+                - generic [ref=e230]: ·
+                - generic [ref=e231]: (00:01:01)
+          - listitem [ref=e232] [cursor=pointer]:
+            - generic "שיעור וידאו סויה" [ref=e233]:
+              - link "סויה" [ref=e235]:
+                - /url: /donburi/y36y-rE
+                - generic [ref=e237]: סויה
+              - generic [ref=e238]:
+                - generic [ref=e239]: וידאו
+                - generic [ref=e240]: ·
+                - generic [ref=e241]: (00:01:17)
+          - listitem [ref=e242] [cursor=pointer]:
+            - generic "שיעור וידאו מירין" [ref=e243]:
+              - link "מירין" [ref=e245]:
+                - /url: /donburi/ahtMTiA
+                - generic [ref=e247]: מירין
+              - generic [ref=e248]:
+                - generic [ref=e249]: וידאו
+                - generic [ref=e250]: ·
+                - generic [ref=e251]: (00:01:13)
+          - listitem [ref=e252] [cursor=pointer]:
+            - generic "שיעור וידאו סאקה" [ref=e253]:
+              - link "סאקה" [ref=e255]:
+                - /url: /donburi/Q7sxpJ8
+                - generic [ref=e257]: סאקה
+              - generic [ref=e258]:
+                - generic [ref=e259]: וידאו
+                - generic [ref=e260]: ·
+                - generic [ref=e261]: (00:00:46)
+          - listitem [ref=e262] [cursor=pointer]:
+            - generic "שיעור וידאו חומץ אורז" [ref=e263]:
+              - link "חומץ אורז" [ref=e265]:
+                - /url: /donburi/fBwXneY
+                - generic [ref=e267]: חומץ אורז
+              - generic [ref=e268]:
+                - generic [ref=e269]: וידאו
+                - generic [ref=e270]: ·
+                - generic [ref=e271]: (00:01:11)
+          - listitem [ref=e272] [cursor=pointer]:
+            - generic "שיעור וידאו מיסו" [ref=e273]:
+              - link "מיסו" [ref=e275]:
+                - /url: /donburi/3hFfbZM
+                - generic [ref=e277]: מיסו
+              - generic [ref=e278]:
+                - generic [ref=e279]: וידאו
+                - generic [ref=e280]: ·
+                - generic [ref=e281]: (00:01:47)
+          - listitem [ref=e282] [cursor=pointer]:
+            - generic "שיעור וידאו שמן שומשום" [ref=e283]:
+              - link "שמן שומשום" [ref=e285]:
+                - /url: /donburi/M-S_z50
+                - generic [ref=e287]: שמן שומשום
+              - generic [ref=e288]:
+                - generic [ref=e289]: וידאו
+                - generic [ref=e290]: ·
+                - generic [ref=e291]: (00:00:49)
+          - listitem [ref=e292] [cursor=pointer]:
+            - generic "שיעור וידאו אצת קונבו" [ref=e293]:
+              - link "אצת קונבו" [ref=e295]:
+                - /url: /donburi/A0IhwXg
+                - generic [ref=e297]: אצת קונבו
+              - generic [ref=e298]:
+                - generic [ref=e299]: וידאו
+                - generic [ref=e300]: ·
+                - generic [ref=e301]: (00:01:04)
+          - listitem [ref=e302] [cursor=pointer]:
+            - generic "שיעור וידאו מונוסודיום גלוטומט" [ref=e303]:
+              - link "מונוסודיום גלוטומט" [ref=e305]:
+                - /url: /donburi/FugE2Dg
+                - generic [ref=e307]: מונוסודיום גלוטומט
+              - generic [ref=e308]:
+                - generic [ref=e309]: וידאו
+                - generic [ref=e310]: ·
+                - generic [ref=e311]: (00:01:10)
+          - listitem [ref=e312] [cursor=pointer]:
+            - generic "שיעור וידאו מיץ יוזו" [ref=e313]:
+              - link "מיץ יוזו" [ref=e315]:
+                - /url: /donburi/cKrJW7U
+                - generic [ref=e317]: מיץ יוזו
+              - generic [ref=e318]:
+                - generic [ref=e319]: וידאו
+                - generic [ref=e320]: ·
+                - generic [ref=e321]: (00:00:50)
+          - listitem [ref=e322] [cursor=pointer]:
+            - generic "שיעור וידאו גוצ׳וג׳אנג" [ref=e323]:
+              - link "גוצ׳וג׳אנג" [ref=e325]:
+                - /url: /donburi/noCK6FQ
+                - generic [ref=e327]: גוצ׳וג׳אנג
+              - generic [ref=e328]:
+                - generic [ref=e329]: וידאו
+                - generic [ref=e330]: ·
+                - generic [ref=e331]: (00:00:27)
+          - listitem [ref=e332] [cursor=pointer]:
+            - generic "שיעור וידאו אבקת דאשי" [ref=e333]:
+              - link "אבקת דאשי" [ref=e335]:
+                - /url: /donburi/HI3_abQ
+                - generic [ref=e337]: אבקת דאשי
+              - generic [ref=e338]:
+                - generic [ref=e339]: וידאו
+                - generic [ref=e340]: ·
+                - generic [ref=e341]: (00:01:13)
+          - listitem [ref=e342] [cursor=pointer]:
+            - generic "שיעור וידאו איפה אפשר לקנות את חומרי הגלם האלה?" [ref=e343]:
+              - link "איפה אפשר לקנות את חומרי הגלם האלה?" [ref=e345]:
+                - /url: /donburi/SsvM-F8
+                - generic [ref=e347]: איפה אפשר לקנות את חומרי הגלם האלה?
+              - generic [ref=e348]:
+                - generic [ref=e349]: וידאו
+                - generic [ref=e350]: ·
+                - generic [ref=e351]: (00:01:29)
+      - list [ref=e352]:
+        - generic [ref=e353]:
+          - listitem [ref=e354] [cursor=pointer]:
+            - generic [ref=e355]:
+              - img [ref=e356]
+              - generic [ref=e359]: 0/10
+            - generic "פרק 5 פרק 5 - בואו נחבר את האורז ואת חומרי הגלם לדונבורי מכיל 10 שיעורים." [ref=e361]:
+              - generic [ref=e362]: פרק 5 - בואו נחבר את האורז ואת חומרי הגלם לדונבורי
+          - listitem [ref=e364] [cursor=pointer]:
+            - generic "שיעור וידאו קאצודון" [ref=e365]:
+              - link "קאצודון" [ref=e367]:
+                - /url: /donburi/GCJWaIM
+                - generic [ref=e369]: קאצודון
+              - generic [ref=e370]:
+                - generic [ref=e371]: וידאו
+                - generic [ref=e372]: ·
+                - generic [ref=e373]: (00:07:59)
+          - listitem [ref=e374] [cursor=pointer]:
+            - generic "שיעור וידאו כבד בטריאקי דון" [ref=e375]:
+              - link "כבד בטריאקי דון" [ref=e377]:
+                - /url: /donburi/IW8WM0c
+                - generic [ref=e379]: כבד בטריאקי דון
+              - generic [ref=e380]:
+                - generic [ref=e381]: וידאו
+                - generic [ref=e382]: ·
+                - generic [ref=e383]: (00:07:36)
+          - listitem [ref=e384] [cursor=pointer]:
+            - generic "שיעור וידאו ניקו מיסו דון" [ref=e385]:
+              - link "ניקו מיסו דון" [ref=e387]:
+                - /url: /donburi/eyq3Rzw
+                - generic [ref=e389]: ניקו מיסו דון
+              - generic [ref=e390]:
+                - generic [ref=e391]: וידאו
+                - generic [ref=e392]: ·
+                - generic [ref=e393]: (00:09:09)
+          - listitem [ref=e394] [cursor=pointer]:
+            - generic "שיעור וידאו נאנבאן דון" [ref=e395]:
+              - link "נאנבאן דון" [ref=e397]:
+                - /url: /donburi/9WW5AP0
+                - generic [ref=e399]: נאנבאן דון
+              - generic [ref=e400]:
+                - generic [ref=e401]: וידאו
+                - generic [ref=e402]: ·
+                - generic [ref=e403]: (00:07:20)
+          - listitem [ref=e404] [cursor=pointer]:
+            - generic "שיעור וידאו יאקיניקו דון" [ref=e405]:
+              - link "יאקיניקו דון" [ref=e407]:
+                - /url: /donburi/WmL6qDA
+                - generic [ref=e409]: יאקיניקו דון
+              - generic [ref=e410]:
+                - generic [ref=e411]: וידאו
+                - generic [ref=e412]: ·
+                - generic [ref=e413]: (00:07:47)
+          - listitem [ref=e414] [cursor=pointer]:
+            - generic "שיעור וידאו טנדון" [ref=e415]:
+              - link "טנדון" [ref=e417]:
+                - /url: /donburi/MzdeMvQ
+                - generic [ref=e419]: טנדון
+              - generic [ref=e420]:
+                - generic [ref=e421]: וידאו
+                - generic [ref=e422]: ·
+                - generic [ref=e423]: (00:16:21)
+          - listitem [ref=e424] [cursor=pointer]:
+            - generic "שיעור וידאו קאיסנדון" [ref=e425]:
+              - link "קאיסנדון" [ref=e427]:
+                - /url: /donburi/GsTMx-c
+                - generic [ref=e429]: קאיסנדון
+              - generic [ref=e430]:
+                - generic [ref=e431]: וידאו
+                - generic [ref=e432]: ·
+                - generic [ref=e433]: (00:08:17)
+          - listitem [ref=e434] [cursor=pointer]:
+            - generic "שיעור וידאו היוגה דון" [ref=e435]:
+              - link "היוגה דון" [ref=e437]:
+                - /url: /donburi/uQpHww4
+                - generic [ref=e439]: היוגה דון
+              - generic [ref=e440]:
+                - generic [ref=e441]: וידאו
+                - generic [ref=e442]: ·
+                - generic [ref=e443]: (00:04:41)
+          - listitem [ref=e444] [cursor=pointer]:
+            - generic "שיעור וידאו יאסאי איטמה דון" [ref=e445]:
+              - link "יאסאי איטמה דון" [ref=e447]:
+                - /url: /donburi/BO7_fTU
+                - generic [ref=e449]: יאסאי איטמה דון
+              - generic [ref=e450]:
+                - generic [ref=e451]: וידאו
+                - generic [ref=e452]: ·
+                - generic [ref=e453]: (00:07:32)
+          - listitem [ref=e454] [cursor=pointer]:
+            - generic "שיעור וידאו נאסו מיסו דון" [ref=e455]:
+              - link "נאסו מיסו דון" [ref=e457]:
+                - /url: /donburi/vqAvatI
+                - generic [ref=e459]: נאסו מיסו דון
+              - generic [ref=e460]:
+                - generic [ref=e461]: וידאו
+                - generic [ref=e462]: ·
+                - generic [ref=e463]: (00:06:44)
+      - list [ref=e464]:
+        - generic [ref=e465]:
+          - listitem [ref=e466] [cursor=pointer]:
+            - generic [ref=e467]:
+              - img [ref=e468]
+              - generic [ref=e471]: 0/1
+            - generic "פרק 6 פרק 6 - אם הבנת את הקונספט, כל דבר יכול להיות דונבורי מכיל 1 שיעורים." [ref=e473]:
+              - generic [ref=e474]: פרק 6 - אם הבנת את הקונספט, כל דבר יכול להיות דונבורי
+          - listitem [ref=e476] [cursor=pointer]:
+            - generic "שיעור וידאו סרטון סיכום" [ref=e477]:
+              - link "סרטון סיכום" [ref=e479]:
+                - /url: /donburi/9Jwvy_s
+                - generic [ref=e481]: סרטון סיכום
+              - generic [ref=e482]:
+                - generic [ref=e483]: וידאו
+                - generic [ref=e484]: ·
+                - generic [ref=e485]: (00:01:09)
+      - list [ref=e486]:
+        - generic [ref=e487]:
+          - listitem [ref=e488] [cursor=pointer]:
+            - generic [ref=e489]:
+              - img [ref=e490]
+              - generic [ref=e493]: 0/2
+            - generic "פרק 7 פרק בונוס מכיל 2 שיעורים." [ref=e495]:
+              - generic [ref=e496]: פרק בונוס
+          - listitem [ref=e498] [cursor=pointer]:
+            - generic "שיעור טקסט רשתות ומסעדות דונבורי מומלצות ביפן" [ref=e499]:
+              - link "רשתות ומסעדות דונבורי מומלצות ביפן" [ref=e501]:
+                - /url: /donburi/YrKFGi4
+                - generic [ref=e503]: רשתות ומסעדות דונבורי מומלצות ביפן
+              - generic [ref=e505]: PDF
+          - listitem [ref=e506] [cursor=pointer]:
+            - generic "שיעור טקסט חוברת מתכונים" [ref=e507]:
+              - link "חוברת מתכונים" [ref=e509]:
+                - /url: /donburi/xlxml6Y
+                - generic [ref=e511]: חוברת מתכונים
+              - generic [ref=e513]: PDF
+      - list [ref=e514]:
+        - generic [ref=e515]:
+          - listitem [ref=e516] [cursor=pointer]:
+            - generic [ref=e517]:
+              - img [ref=e518]
+              - generic [ref=e521]: 0/1
+            - generic "פרק 8 לייב דונבורי סודי עם רנן מכיל 1 שיעורים." [ref=e523]:
+              - generic [ref=e524]: לייב דונבורי סודי עם רנן
+          - listitem [ref=e526] [cursor=pointer]:
+            - generic "שיעור טקסט המועד טרם נקבע" [ref=e527]:
+              - link "המועד טרם נקבע" [ref=e529]:
+                - /url: /donburi/1bvhhrE
+                - generic [ref=e531]: המועד טרם נקבע
+              - generic [ref=e533]: PDF

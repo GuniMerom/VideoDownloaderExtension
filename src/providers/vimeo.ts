@@ -36,6 +36,8 @@ interface VimeoConfig {
     id?: number;
     title?: string;
     duration?: number;
+    width?: number;
+    height?: number;
     thumbs?: Record<string, string>;
   };
   request?: {
@@ -45,19 +47,53 @@ interface VimeoConfig {
         cdns?: Record<string, { url: string }>;
         default_cdn?: string;
       };
+      dash?: {
+        cdns?: Record<string, { url?: string; avc_url?: string }>;
+        default_cdn?: string;
+      };
     };
     text_tracks?: VimeoTextTrack[];
   };
 }
 
-async function fetchConfig(videoId: string): Promise<VimeoConfig> {
-  const resp = await fetch(`https://player.vimeo.com/video/${videoId}/config`, {
-    headers: { Accept: 'application/json' },
+async function fetchConfig(videoId: string, pageUrl?: string): Promise<VimeoConfig> {
+  // Strategy 1: Try the /config API endpoint (works for public videos)
+  try {
+    const resp = await fetch(`https://player.vimeo.com/video/${videoId}/config`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (resp.ok) {
+      return resp.json() as Promise<VimeoConfig>;
+    }
+  } catch {
+    // /config endpoint blocked or failed — fall through to Strategy 2
+  }
+
+  // Strategy 2: Fetch the player page HTML and parse window.playerConfig
+  // This works for private/embedded videos when we set the correct Referer
+  const referer = pageUrl ?? 'https://vimeo.com/';
+  const playerUrl = `https://player.vimeo.com/video/${videoId}`;
+  const resp = await fetch(playerUrl, {
+    headers: {
+      Referer: referer,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    },
   });
   if (!resp.ok) {
-    throw new Error(`Vimeo config fetch failed: ${resp.status}`);
+    throw new Error(`Vimeo player page fetch failed: ${resp.status}`);
   }
-  return resp.json() as Promise<VimeoConfig>;
+
+  const html = await resp.text();
+  const configMatch = html.match(/window\.playerConfig\s*=\s*(\{.*\})/);
+  if (!configMatch) {
+    throw new Error('Could not find playerConfig in Vimeo player page');
+  }
+
+  try {
+    return JSON.parse(configMatch[1]) as VimeoConfig;
+  } catch {
+    throw new Error('Failed to parse Vimeo playerConfig JSON');
+  }
 }
 
 const vimeoProvider: VideoProvider = {
@@ -79,7 +115,7 @@ const vimeoProvider: VideoProvider = {
       throw new Error('Could not extract Vimeo video ID from URL');
     }
 
-    const config = await fetchConfig(videoId);
+    const config = await fetchConfig(videoId, context.pageUrl);
     const streams: VideoStream[] = [];
     const subtitles: SubtitleTrack[] = [];
 
@@ -106,7 +142,27 @@ const vimeoProvider: VideoProvider = {
           url: hlsUrl,
           quality: 'auto (HLS)',
           type: 'muxed',
-          format: 'm3u8',
+          format: 'hls',
+        });
+      }
+    }
+
+    // DASH streams (common for private/embedded videos)
+    const dash = config.request?.files?.dash;
+    if (dash?.cdns) {
+      const cdnKey = dash.default_cdn ?? Object.keys(dash.cdns)[0];
+      const cdn = dash.cdns[cdnKey];
+      const dashUrl = cdn?.avc_url ?? cdn?.url;
+      if (dashUrl) {
+        const resolution = config.video?.width && config.video?.height
+          ? `${config.video.width}x${config.video.height}`
+          : undefined;
+        streams.push({
+          url: dashUrl,
+          quality: resolution ? `${config.video!.height}p (DASH)` : 'auto (DASH)',
+          resolution,
+          type: 'muxed',
+          format: 'dash',
         });
       }
     }
