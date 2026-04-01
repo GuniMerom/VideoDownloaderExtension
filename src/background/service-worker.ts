@@ -17,7 +17,7 @@ import type {
   PageVideosResponse,
 } from '../shared/messages';
 import { getSettings, saveSettings, getDownloadHistory, addToHistory, clearHistory, getAnalyzedVideosForTab, setAnalyzedVideosForTab, clearTabData } from '../core/storage';
-import { downloadDirect, downloadSegmented, downloadAndMerge, triggerBrowserDownload } from '../core/downloader';
+import { downloadDirect, downloadAndMerge, triggerBrowserDownload } from '../core/downloader';
 import { downloadAllSubtitles } from '../core/subtitle-extractor';
 import { isMasterPlaylist, parseMasterPlaylist, parseMediaPlaylist } from '../core/hls-parser';
 import { parseMPD, getVideoRepresentations, resolveSegmentUrls } from '../core/dash-parser';
@@ -127,6 +127,16 @@ async function handleMessage(
         await clearHistory();
         sendResponse({ success: true });
         break;
+
+      case 'OFFSCREEN_PROGRESS': {
+        const activeTask = activeDownloads.get(message.taskId);
+        if (activeTask) {
+          activeTask.progress = message.progress;
+          broadcastProgress(activeTask);
+        }
+        sendResponse({ ok: true });
+        break;
+      }
 
       case 'GET_PAGE_VIDEOS':
         // This is handled by the content script, not the service worker
@@ -383,6 +393,21 @@ async function handleDownloadVideo(
   return { taskId };
 }
 
+// ─── Offscreen document management ───
+
+async function ensureOffscreen(): Promise<void> {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+  });
+  if (existingContexts.length > 0) return;
+
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: [chrome.offscreen.Reason.BLOBS],
+    justification: 'Download and concatenate video segments',
+  });
+}
+
 // ─── Download execution ───
 
 /**
@@ -442,13 +467,28 @@ async function executeDownload(task: DownloadTask): Promise<void> {
         onProgress,
       );
     } else if (isSegmented) {
-      // HLS/DASH segmented stream — resolve manifest to actual segment URLs
+      // HLS/DASH segmented stream — resolve manifest then download via offscreen document
       console.log('[SW] Resolving manifest to segments:', stream.url.substring(0, 100));
       const segmentUrls = await resolveManifestToSegments(stream.url);
-      console.log(`[SW] Found ${segmentUrls.length} segments, downloading...`);
-      const segmentBlob = await downloadSegmented(segmentUrls, onProgress);
-      console.log(`[SW] Segments downloaded, total size: ${segmentBlob.size} bytes`);
-      await triggerBrowserDownload(segmentBlob, filename);
+      console.log(`[SW] Found ${segmentUrls.length} segments, delegating to offscreen document...`);
+
+      await ensureOffscreen();
+
+      const result = await chrome.runtime.sendMessage({
+        type: 'OFFSCREEN_DOWNLOAD_SEGMENTS',
+        segmentUrls,
+        taskId: task.id,
+      }) as { blobUrl?: string; size?: number; error?: string };
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      console.log(`[SW] Offscreen download complete, size: ${result.size} bytes`);
+      await downloadDirect(result.blobUrl!, filename);
+
+      // Clean up the offscreen document
+      await chrome.offscreen.closeDocument().catch(() => {});
     } else {
       // Fallback: treat as direct download
       await downloadDirect(stream.url, filename);

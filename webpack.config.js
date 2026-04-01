@@ -9,6 +9,7 @@ module.exports = (env, argv) => {
       'service-worker': './src/background/service-worker.ts',
       'content-script': './src/content/content-script.ts',
       'popup': './src/popup/index.tsx',
+      'offscreen': './src/offscreen/offscreen.ts',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -40,6 +41,7 @@ module.exports = (env, argv) => {
       new CopyWebpackPlugin({
         patterns: [
           { from: 'src/manifest.json', to: 'manifest.json' },
+          { from: 'src/offscreen/offscreen.html', to: 'offscreen.html' },
           { from: 'public', to: '.', noErrorOnMissing: true },
           { from: 'src/assets', to: 'assets', noErrorOnMissing: true },
         ],

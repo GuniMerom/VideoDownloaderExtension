@@ -125,6 +125,20 @@ export interface PageVideosResponse {
   videos: DetectedVideo[];
 }
 
+// ─── Offscreen Document Messages ───
+
+export interface OffscreenDownloadMessage {
+  type: 'OFFSCREEN_DOWNLOAD_SEGMENTS';
+  segmentUrls: string[];
+  taskId: string;
+}
+
+export interface OffscreenProgressMessage {
+  type: 'OFFSCREEN_PROGRESS';
+  taskId: string;
+  progress: number;
+}
+
 // ─── Union type for all messages ───
 
 export type ExtensionMessage =
@@ -143,4 +157,6 @@ export type ExtensionMessage =
   | GetPageVideosMessage
   | PageContextFetchMessage
   | PageContextExtractMessage
-  | VideoAnalyzedMessage;
+  | VideoAnalyzedMessage
+  | OffscreenDownloadMessage
+  | OffscreenProgressMessage;
