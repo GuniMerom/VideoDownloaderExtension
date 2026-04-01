@@ -593,10 +593,19 @@ async function resolveManifestToSegments(manifestUrl: string): Promise<string[]>
       const mediaResp = await fetch(best.url);
       const mediaText = await mediaResp.text();
       const media = parseMediaPlaylist(mediaText, best.url);
-      return media.segments.map(s => s.url);
+      const urls = media.segments.map(s => s.url);
+      // Prepend init segment (fMP4 requires ftyp+moov header)
+      if (media.initSegment?.url) {
+        urls.unshift(media.initSegment.url);
+      }
+      return urls;
     } else {
       const media = parseMediaPlaylist(text, manifestUrl);
-      return media.segments.map(s => s.url);
+      const urls = media.segments.map(s => s.url);
+      if (media.initSegment?.url) {
+        urls.unshift(media.initSegment.url);
+      }
+      return urls;
     }
   } else if (manifestUrl.includes('.mpd') || text.trimStart().startsWith('<?xml') || text.trimStart().startsWith('<MPD')) {
     // DASH manifest
