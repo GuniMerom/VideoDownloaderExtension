@@ -112,33 +112,40 @@ export function App() {
   }, []);
 
   const handleDownload = useCallback(
-    (
+    async (
       info: VideoInfo,
       selectedStream: VideoStream,
       audioStream?: VideoStream,
       downloadSubs?: boolean
     ) => {
-      const taskId = `dl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const task: DownloadTask = {
-        id: taskId,
-        videoInfo: info,
-        selectedStream,
-        audioStream,
-        subtitleTracks: downloadSubs ? info.subtitles : undefined,
-        status: 'pending',
-        progress: 0,
-        startedAt: Date.now(),
-      };
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'DOWNLOAD_VIDEO',
+          videoInfo: info,
+          selectedStream,
+          audioStream,
+          downloadSubtitles: downloadSubs ?? false,
+        }) as { taskId?: string; error?: string };
 
-      setDownloadTasks((prev) => new Map(prev).set(taskId, task));
+        if (!response?.taskId) {
+          throw new Error(response?.error || 'Download could not be started');
+        }
 
-      chrome.runtime.sendMessage({
-        type: 'DOWNLOAD_VIDEO',
-        videoInfo: info,
-        selectedStream,
-        audioStream,
-        downloadSubtitles: downloadSubs ?? false,
-      });
+        const task: DownloadTask = {
+          id: response.taskId,
+          videoInfo: info,
+          selectedStream,
+          audioStream,
+          subtitleTracks: downloadSubs ? info.subtitles : undefined,
+          status: 'pending',
+          progress: 0,
+          startedAt: Date.now(),
+        };
+
+        setDownloadTasks((prev) => new Map(prev).set(response.taskId!, task));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Download could not be started');
+      }
     },
     []
   );

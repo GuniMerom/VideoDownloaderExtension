@@ -10,19 +10,6 @@ const QUALITY_OPTIONS: Array<{ value: ExtensionSettings['preferredQuality']; lab
   { value: '360p', label: '360p' },
 ];
 
-const ALL_PROVIDERS = [
-  'vimeo',
-  'streamable',
-  'wistia',
-  'jwplayer',
-  'brightcove',
-  'dailymotion',
-  'cloudflare-stream',
-  'html5-direct',
-  'hls-generic',
-  'dash-generic',
-];
-
 interface SettingsProps {
   onClose: () => void;
 }
@@ -45,16 +32,6 @@ export function Settings({ onClose }: SettingsProps) {
 
   const update = <K extends keyof ExtensionSettings>(key: K, value: ExtensionSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    setDirty(true);
-  };
-
-  const toggleProvider = (provider: string) => {
-    setSettings((prev) => {
-      const enabled = prev.enabledProviders.includes(provider)
-        ? prev.enabledProviders.filter((p) => p !== provider)
-        : [...prev.enabledProviders, provider];
-      return { ...prev, enabledProviders: enabled };
-    });
     setDirty(true);
   };
 
@@ -81,11 +58,11 @@ export function Settings({ onClose }: SettingsProps) {
       <div class="settings-panel">
         <div class="settings-header">
           <h2 class="settings-title">Settings</h2>
-          <button class="btn-icon" onClick={onClose} aria-label="Close settings">✕</button>
+          <button class="btn-icon" onClick={onClose} aria-label="Close settings">x</button>
         </div>
         <div class="empty-state">
           <div class="loading-spinner" />
-          <p>Loading settings…</p>
+          <p>Loading settings...</p>
         </div>
       </div>
     );
@@ -95,11 +72,10 @@ export function Settings({ onClose }: SettingsProps) {
     <div class="settings-panel">
       <div class="settings-header">
         <h2 class="settings-title">Settings</h2>
-        <button class="btn-icon" onClick={onClose} aria-label="Close settings">✕</button>
+        <button class="btn-icon" onClick={onClose} aria-label="Close settings">x</button>
       </div>
 
       <div class="settings-body">
-        {/* Preferred Quality */}
         <div class="settings-group">
           <label class="settings-label" htmlFor="pref-quality">Preferred Quality</label>
           <select
@@ -116,16 +92,7 @@ export function Settings({ onClose }: SettingsProps) {
           </select>
         </div>
 
-        {/* Toggles */}
         <div class="settings-group">
-          <label class="toggle-row">
-            <span>Auto-detect videos</span>
-            <input
-              type="checkbox"
-              checked={settings.autoDetect}
-              onChange={(e) => update('autoDetect', (e.target as HTMLInputElement).checked)}
-            />
-          </label>
           <label class="toggle-row">
             <span>Download subtitles</span>
             <input
@@ -144,36 +111,20 @@ export function Settings({ onClose }: SettingsProps) {
           </label>
         </div>
 
-        {/* Provider List */}
         <div class="settings-group">
-          <span class="settings-label">Providers</span>
-          <div class="provider-list">
-            {ALL_PROVIDERS.map((p) => (
-              <label class="checkbox-label" key={p}>
-                <input
-                  type="checkbox"
-                  checked={settings.enabledProviders.includes(p)}
-                  onChange={() => toggleProvider(p)}
-                />
-                <span>{p}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Clear History */}
-        <div class="settings-group">
+          <p class="settings-note">
+            Advanced provider and auto-detect toggles are hidden until their behavior is fully validated.
+          </p>
           <button class="btn btn-secondary btn-block" onClick={handleClearHistory}>
-            🗑 Clear Download History
+            Clear Download History
           </button>
         </div>
       </div>
 
-      {/* Save / Cancel */}
       <div class="settings-footer">
         <button class="btn btn-secondary" onClick={onClose}>Cancel</button>
         <button class="btn btn-primary" onClick={handleSave} disabled={!dirty || saving}>
-          {saving ? <><span class="spinner" /> Saving…</> : 'Save'}
+          {saving ? <><span class="spinner" /> Saving...</> : 'Save'}
         </button>
       </div>
     </div>

@@ -61,6 +61,10 @@ export function DownloadProgress({ tasks }: DownloadProgressProps) {
             {task.status === 'error' && task.error && (
               <p class="download-error">{task.error}</p>
             )}
+
+            {task.status === 'complete' && task.completionMessage && (
+              <p class="download-status-note">{task.completionMessage}</p>
+            )}
           </div>
         ))}
       </div>

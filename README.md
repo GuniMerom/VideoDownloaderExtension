@@ -116,6 +116,21 @@ This creates a `dist/` folder containing the compiled extension.
 
 ## Usage
 
+For downloading a full authenticated course library, see [docs/COURSE_LIBRARY_WORKFLOW.md](./docs/COURSE_LIBRARY_WORKFLOW.md).
+
+The repository now also includes a Komata-first Playwright exporter for bulk authenticated export:
+
+```powershell
+npm.cmd run course:export -- --course-url "https://course.komata.co.il/..." --output-root "C:\Users\<you>\Documents\Education\Cooking\Komata" --user-data-dir "C:\Users\<you>\AppData\Local\Google\Chrome\User Data" --profile Default
+```
+
+For post-download course knowledge synthesis, the repository also includes a summarization CLI:
+
+```powershell
+$env:OPENAI_API_KEY="your-key"
+npm.cmd run course:summarize -- --course-root "C:\Users\<you>\Documents\Education\Cooking\Komata\<Course Name>"
+```
+
 ### Paste a Link
 
 1. Click the extension icon (or press `Ctrl+Shift+D`)
@@ -279,6 +294,8 @@ this.register(new MyPlatformProvider());
 | `npm run dev` | Development build with watch mode (rebuilds on file changes) |
 | `npm run typecheck` | Run TypeScript type checking without emitting files |
 | `npm run clean` | Remove the `dist/` folder |
+| `npm run course:export` | Bulk export an authenticated course into the local education library |
+| `npm run course:summarize` | Build `_Summaries/` outputs from an exported course folder |
 
 ---
 
@@ -301,7 +318,7 @@ this.register(new MyPlatformProvider());
 - **YouTube is not supported** — by design; this extension focuses on course/educational platforms
 - **Large files (>1GB)** — may be slow due to in-memory segment concatenation; a streaming approach is planned
 - **Some platforms require authentication** — if you're logged into a course platform, the extension uses your existing session cookies; it cannot access content you don't have permission to view
-- **ffmpeg.wasm is not yet bundled** — when audio and video streams are separate and require muxing, they are currently downloaded as separate files (full muxing integration is planned)
+- **A local `ffmpeg` dependency is required for bulk export and watcher-based merging** — the Playwright exporter and merge helpers use your installed `ffmpeg` to produce the final single-file MP4 output
 
 ---
 

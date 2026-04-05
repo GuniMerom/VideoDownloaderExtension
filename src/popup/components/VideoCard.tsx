@@ -69,6 +69,19 @@ export function VideoCard({ videoInfo, onDownload }: VideoCardProps) {
           onSelect={handleQualitySelect}
         />
 
+        {videoInfo.downloadReadiness && (
+          <p class="download-hint">
+            {videoInfo.downloadReadiness === 'ready_with_muxed_output' && 'This stream should download as a single file.'}
+            {videoInfo.downloadReadiness === 'ready_with_separate_audio_needing_merge' && 'This stream needs in-browser audio/video merging before saving.'}
+            {videoInfo.downloadReadiness === 'ready_video_only' && 'Only video output is currently available for this source.'}
+            {videoInfo.downloadReadiness === 'unsupported_drm_or_unmergeable' && 'This source does not look reliably downloadable as an offline file.'}
+          </p>
+        )}
+
+        {videoInfo.downloadWarnings && videoInfo.downloadWarnings.length > 0 && (
+          <p class="download-hint warning-text">{videoInfo.downloadWarnings[0]}</p>
+        )}
+
         {videoInfo.subtitles.length > 0 && (
           <div class="subtitle-toggle">
             <label class="checkbox-label">

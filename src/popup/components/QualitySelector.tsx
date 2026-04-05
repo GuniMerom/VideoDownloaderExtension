@@ -37,18 +37,25 @@ function streamLabel(stream: VideoStream): string {
 function findBestStream(streams: VideoStream[]): number {
   if (streams.length === 0) return -1;
 
-  // Sort by bandwidth descending and pick the best
   let bestIdx = 0;
-  let bestBandwidth = streams[0].bandwidth ?? 0;
+  let bestScore = streamScore(streams[0]);
 
   for (let i = 1; i < streams.length; i++) {
-    const bw = streams[i].bandwidth ?? 0;
-    if (bw > bestBandwidth) {
-      bestBandwidth = bw;
+    const score = streamScore(streams[i]);
+    if (score > bestScore) {
+      bestScore = score;
       bestIdx = i;
     }
   }
   return bestIdx;
+}
+
+function streamScore(stream: VideoStream): number {
+  const resolutionMatch = stream.resolution?.match(/(\d+)x(\d+)/);
+  const resolutionHeight = resolutionMatch ? parseInt(resolutionMatch[2], 10) : 0;
+  const qualityMatch = stream.quality.match(/(\d+)p/i);
+  const qualityHeight = qualityMatch ? parseInt(qualityMatch[1], 10) : 0;
+  return resolutionHeight || qualityHeight || stream.bandwidth || 0;
 }
 
 export function QualitySelector({
@@ -68,8 +75,7 @@ export function QualitySelector({
     if (allStreams.length > 0) {
       const best = bestIdx >= 0 ? bestIdx : 0;
       setSelectedIdx(best);
-      const bestAudio =
-        audioStreams && audioStreams.length > 0 ? audioStreams[0] : undefined;
+      const bestAudio = selectAudioForStream(allStreams[best], audioStreams);
       onSelect(allStreams[best], allStreams[best].type === 'video' ? bestAudio : undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -80,10 +86,7 @@ export function QualitySelector({
     setSelectedIdx(idx);
 
     const stream = allStreams[idx];
-    const audio =
-      stream.type === 'video' && audioStreams && audioStreams.length > 0
-        ? audioStreams[0]
-        : undefined;
+    const audio = selectAudioForStream(stream, audioStreams);
     onSelect(stream, audio);
   };
 
@@ -123,4 +126,16 @@ export function QualitySelector({
       </select>
     </div>
   );
+}
+
+function selectAudioForStream(
+  stream: VideoStream,
+  audioStreams?: VideoStream[],
+): VideoStream | undefined {
+  if (stream.type !== 'video' || !audioStreams || audioStreams.length === 0) {
+    return undefined;
+  }
+
+  return audioStreams.find((audio) => audio.groupId && audio.groupId === stream.groupId)
+    ?? audioStreams[0];
 }

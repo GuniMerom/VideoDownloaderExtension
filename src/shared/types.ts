@@ -10,7 +10,14 @@ export interface VideoStream {
   format?: string;
   fileSize?: number;
   frameRate?: string;
+  groupId?: string;
 }
+
+export type DownloadReadiness =
+  | 'ready_with_muxed_output'
+  | 'ready_with_separate_audio_needing_merge'
+  | 'ready_video_only'
+  | 'unsupported_drm_or_unmergeable';
 
 export interface SubtitleTrack {
   url: string;
@@ -29,6 +36,8 @@ export interface VideoInfo {
   pageUrl: string;
   streams: VideoStream[];
   subtitles: SubtitleTrack[];
+  downloadReadiness?: DownloadReadiness;
+  downloadWarnings?: string[];
   metadata?: Record<string, unknown>;
 }
 
@@ -61,6 +70,7 @@ export interface DownloadTask {
   progress: number;
   error?: string;
   outputFilename?: string;
+  completionMessage?: string;
   startedAt: number;
   completedAt?: number;
 }

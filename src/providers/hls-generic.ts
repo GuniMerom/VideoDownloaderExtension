@@ -1,5 +1,6 @@
 import type { VideoInfo, VideoStream } from '../shared/types';
 import type { VideoProvider, ExtractionContext } from './provider-interface';
+import { getAudioRenditionsForGroup, parseMasterPlaylist as parseMasterPlaylistCore } from '../core/hls-parser';
 
 function generateId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -8,44 +9,6 @@ function generateId(): string {
 }
 
 const M3U8_RE = /\.m3u8(\?|$)/i;
-
-interface HlsVariant {
-  url: string;
-  bandwidth: number;
-  resolution?: string;
-  codecs?: string;
-  frameRate?: string;
-  name?: string;
-}
-
-/**
- * Minimal inline HLS master playlist parser.
- * Parses #EXT-X-STREAM-INF lines to extract variant streams.
- */
-function parseMasterPlaylist(content: string, baseUrl: string): HlsVariant[] {
-  const variants: HlsVariant[] = [];
-  const lines = content.split('\n').map((l) => l.trim());
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
-
-    const attrs = line.substring('#EXT-X-STREAM-INF:'.length);
-    const urlLine = lines[i + 1];
-    if (!urlLine || urlLine.startsWith('#')) continue;
-
-    const url = resolveUrl(urlLine, baseUrl);
-    const bandwidth = parseAttrInt(attrs, 'BANDWIDTH') ?? 0;
-    const resolution = parseAttrString(attrs, 'RESOLUTION');
-    const codecs = parseAttrString(attrs, 'CODECS');
-    const frameRate = parseAttrString(attrs, 'FRAME-RATE');
-    const name = parseAttrString(attrs, 'NAME');
-
-    variants.push({ url, bandwidth, resolution, codecs, frameRate, name });
-  }
-
-  return variants;
-}
 
 /**
  * Check if the playlist is a media playlist (contains segments, not variants).
@@ -74,35 +37,7 @@ function calculateDuration(content: string): number {
   return totalDuration;
 }
 
-function parseAttrInt(attrs: string, name: string): number | undefined {
-  const re = new RegExp(`${name}=(\\d+)`);
-  const match = attrs.match(re);
-  return match ? parseInt(match[1], 10) : undefined;
-}
-
-function parseAttrString(attrs: string, name: string): string | undefined {
-  // Try quoted value first: NAME="value"
-  const quotedRe = new RegExp(`${name}="([^"]+)"`);
-  const quotedMatch = attrs.match(quotedRe);
-  if (quotedMatch) return quotedMatch[1];
-
-  // Unquoted value: RESOLUTION=1920x1080
-  const unquotedRe = new RegExp(`${name}=([^,\\s]+)`);
-  const unquotedMatch = attrs.match(unquotedRe);
-  return unquotedMatch ? unquotedMatch[1] : undefined;
-}
-
-function resolveUrl(url: string, baseUrl: string): string {
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  try {
-    return new URL(url, baseUrl).href;
-  } catch {
-    return url;
-  }
-}
-
-function qualityFromVariant(variant: HlsVariant): string {
-  if (variant.name) return variant.name;
+function qualityFromVariant(variant: { resolution?: string; bandwidth: number }): string {
   if (variant.resolution) {
     const heightMatch = variant.resolution.match(/x(\d+)/);
     if (heightMatch) return `${heightMatch[1]}p`;
@@ -162,7 +97,8 @@ const hlsGenericProvider: VideoProvider = {
     }
 
     // Master playlist — parse variants
-    const variants = parseMasterPlaylist(content, url);
+    const master = parseMasterPlaylistCore(content, url);
+    const variants = master.variants;
 
     if (variants.length === 0) {
       // Couldn't parse variants, add the manifest as-is
@@ -183,10 +119,27 @@ const hlsGenericProvider: VideoProvider = {
           resolution: variant.resolution,
           bandwidth: variant.bandwidth,
           codec: variant.codecs,
-          type: 'muxed',
+          type: variant.audio ? 'video' : 'muxed',
           format: 'm3u8',
           frameRate: variant.frameRate,
+          groupId: variant.audio,
         });
+      }
+
+      const seenAudioUrls = new Set<string>();
+      for (const variant of variants) {
+        const audioRenditions = getAudioRenditionsForGroup(master, variant.audio);
+        for (const audio of audioRenditions) {
+          if (!audio.uri || seenAudioUrls.has(audio.uri)) continue;
+          seenAudioUrls.add(audio.uri);
+          streams.push({
+            url: audio.uri,
+            quality: audio.name,
+            type: 'audio',
+            format: 'm3u8',
+            groupId: audio.groupId,
+          });
+        }
       }
     }
 
@@ -197,6 +150,11 @@ const hlsGenericProvider: VideoProvider = {
       pageUrl: pageUrl ?? url,
       streams,
       subtitles: [],
+      downloadReadiness: streams.some((stream) => stream.type === 'audio')
+        ? 'ready_with_separate_audio_needing_merge'
+        : streams.some((stream) => stream.type === 'muxed')
+          ? 'ready_with_muxed_output'
+          : 'ready_video_only',
       metadata: { variantCount: variants.length, isMasterPlaylist: true },
     };
   },

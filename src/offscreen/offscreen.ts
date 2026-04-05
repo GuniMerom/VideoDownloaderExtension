@@ -104,7 +104,7 @@ async function downloadAndMergeTracks(
   videoUrls: string[],
   audioUrls: string[],
   taskId: string,
-): Promise<{ blobUrl: string; size: number }> {
+): Promise<{ blobUrl: string; size: number; mergeMode: 'merged' | 'video-only-fallback' }> {
   const totalSegments = videoUrls.length + audioUrls.length;
   let downloaded = 0;
 
@@ -129,19 +129,21 @@ async function downloadAndMergeTracks(
 
   // Try to merge, fall back to video-only if merge fails
   let merged: Uint8Array;
+  let mergeMode: 'merged' | 'video-only-fallback' = 'merged';
   try {
     merged = mergeFMP4Tracks(videoBuffers, audioBuffers);
     console.log(`[Offscreen] Merged successfully: ${merged.length} bytes`);
   } catch (err) {
     console.error('[Offscreen] Merge failed, falling back to video-only:', err);
     merged = concatenateBuffers(videoBuffers);
+    mergeMode = 'video-only-fallback';
   }
 
   reportProgress(taskId, 98);
 
   const blob = new Blob([merged.buffer as ArrayBuffer], { type: 'video/mp4' });
   const blobUrl = URL.createObjectURL(blob);
-  return { blobUrl, size: blob.size };
+  return { blobUrl, size: blob.size, mergeMode };
 }
 
 function concatenateBuffers(buffers: ArrayBuffer[]): Uint8Array {

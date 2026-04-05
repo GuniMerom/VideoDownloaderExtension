@@ -9,6 +9,16 @@ export interface HLSVariant {
   audio?: string;
 }
 
+export interface HLSMediaRendition {
+  type: 'AUDIO' | 'VIDEO' | 'SUBTITLES' | 'CLOSED-CAPTIONS';
+  groupId: string;
+  name: string;
+  language?: string;
+  uri?: string;
+  isDefault: boolean;
+  autoSelect: boolean;
+}
+
 export interface HLSSegment {
   url: string;
   duration: number;
@@ -24,6 +34,7 @@ export interface HLSEncryption {
 export interface HLSMasterPlaylist {
   type: 'master';
   variants: HLSVariant[];
+  renditions: HLSMediaRendition[];
 }
 
 export interface HLSMediaPlaylist {
@@ -50,13 +61,38 @@ export function parseMasterPlaylist(content: string, baseUrl: string): HLSMaster
   try {
   const trimmedContent = content.trim();
   if (!trimmedContent.startsWith('#EXTM3U')) {
-    return { type: 'master', variants: [] };
+    return { type: 'master', variants: [], renditions: [] };
   }
   const variants: HLSVariant[] = [];
+  const renditions: HLSMediaRendition[] = [];
   const lines = trimmedContent.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
+    if (line.startsWith('#EXT-X-MEDIA:')) {
+      const attrs = line.substring('#EXT-X-MEDIA:'.length);
+      const typeMatch = attrs.match(/TYPE=([^,]+)/);
+      const groupIdMatch = attrs.match(/GROUP-ID="([^"]+)"/);
+      const nameMatch = attrs.match(/NAME="([^"]+)"/);
+      const languageMatch = attrs.match(/LANGUAGE="([^"]+)"/);
+      const uriMatch = attrs.match(/URI="([^"]+)"/);
+      const defaultMatch = attrs.match(/DEFAULT=(YES|NO)/);
+      const autoSelectMatch = attrs.match(/AUTOSELECT=(YES|NO)/);
+
+      if (typeMatch && groupIdMatch && nameMatch) {
+        renditions.push({
+          type: typeMatch[1] as HLSMediaRendition['type'],
+          groupId: groupIdMatch[1],
+          name: nameMatch[1],
+          language: languageMatch?.[1],
+          uri: uriMatch ? resolveUrl(uriMatch[1], baseUrl) : undefined,
+          isDefault: defaultMatch?.[1] === 'YES',
+          autoSelect: autoSelectMatch?.[1] !== 'NO',
+        });
+      }
+      continue;
+    }
+
     if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
 
     const attrs = line.substring('#EXT-X-STREAM-INF:'.length);
@@ -89,10 +125,28 @@ export function parseMasterPlaylist(content: string, baseUrl: string): HLSMaster
     });
   }
 
-  return { type: 'master', variants };
+  return { type: 'master', variants, renditions };
   } catch {
-    return { type: 'master', variants: [] };
+    return { type: 'master', variants: [], renditions: [] };
   }
+}
+
+export function getAudioRenditionsForGroup(
+  playlist: HLSMasterPlaylist,
+  groupId?: string,
+): HLSMediaRendition[] {
+  if (!groupId) return [];
+  return playlist.renditions.filter((rendition) => rendition.type === 'AUDIO' && rendition.groupId === groupId);
+}
+
+export function getDefaultAudioRendition(
+  playlist: HLSMasterPlaylist,
+  groupId?: string,
+): HLSMediaRendition | undefined {
+  const renditions = getAudioRenditionsForGroup(playlist, groupId);
+  return renditions.find((rendition) => rendition.isDefault)
+    ?? renditions.find((rendition) => rendition.autoSelect)
+    ?? renditions[0];
 }
 
 export function parseMediaPlaylist(content: string, baseUrl: string): HLSMediaPlaylist {

@@ -528,6 +528,19 @@ body {
   margin-top: 4px;
 }
 
+.download-status-note,
+.download-hint,
+.settings-note {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #666;
+}
+
+.warning-text {
+  color: #b06000;
+}
+
 /* ─── Download Button ─── */
 .download-btn {
   padding: 10px;
@@ -945,6 +958,16 @@ body {
 
   .download-error {
     color: #ff6b6b;
+  }
+
+  .download-status-note,
+  .download-hint,
+  .settings-note {
+    color: #aaa;
+  }
+
+  .warning-text {
+    color: #ffb34d;
   }
 
   .download-status.status-error {

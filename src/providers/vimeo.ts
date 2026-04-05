@@ -1,5 +1,6 @@
 import type { VideoInfo, VideoStream, SubtitleTrack } from '../shared/types';
 import type { VideoProvider, ExtractionContext } from './provider-interface';
+import { getAudioRenditionsForGroup, parseMasterPlaylist } from '../core/hls-parser';
 
 function generateId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -175,6 +176,7 @@ const vimeoProvider: VideoProvider = {
     const config = await fetchConfig(videoId, context.pageUrl);
     const streams: VideoStream[] = [];
     const subtitles: SubtitleTrack[] = [];
+    const downloadWarnings: string[] = [];
 
     // Progressive MP4 streams
     const progressive = config.request?.files?.progressive ?? [];
@@ -195,53 +197,56 @@ const vimeoProvider: VideoProvider = {
       const cdnKey = hls.default_cdn ?? Object.keys(hls.cdns)[0];
       const hlsUrl = hls.cdns[cdnKey]?.url;
       if (hlsUrl) {
-        // Add the master playlist as "auto" option
-        streams.push({
-          url: hlsUrl,
-          quality: 'auto (HLS)',
-          type: 'muxed',
-          format: 'hls',
-        });
-
-        // Try to fetch and parse the master playlist to list individual qualities
+        let hasSeparateAudio = false;
         try {
           const masterResp = await fetch(hlsUrl);
           if (masterResp.ok) {
             const masterText = await masterResp.text();
-            const lines = masterText.split('\n');
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i].trim();
-              if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
-              const bwMatch = line.match(/BANDWIDTH=(\d+)/);
-              const resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-              // Next non-comment line is the variant URL
-              let variantUrl = '';
-              for (let j = i + 1; j < lines.length; j++) {
-                const next = lines[j].trim();
-                if (next && !next.startsWith('#')) {
-                  variantUrl = next;
-                  break;
-                }
-              }
-              if (variantUrl && bwMatch) {
-                const resolvedUrl = variantUrl.startsWith('http')
-                  ? variantUrl
-                  : new URL(variantUrl, hlsUrl).href;
-                const resolution = resMatch?.[1];
-                const height = resolution?.split('x')[1];
+            const master = parseMasterPlaylist(masterText, hlsUrl);
+            hasSeparateAudio = master.renditions.some((rendition) => rendition.type === 'AUDIO');
+
+            for (const variant of master.variants) {
+              const height = variant.resolution?.split('x')[1];
+              streams.push({
+                url: variant.url,
+                quality: height ? `${height}p` : `${Math.round(variant.bandwidth / 1000)}kbps`,
+                resolution: variant.resolution,
+                bandwidth: variant.bandwidth,
+                codec: variant.codecs,
+                type: variant.audio ? 'video' : 'muxed',
+                format: 'hls',
+                frameRate: variant.frameRate,
+                groupId: variant.audio,
+              });
+            }
+
+            const seenAudioUrls = new Set<string>();
+            for (const variant of master.variants) {
+              const audioRenditions = getAudioRenditionsForGroup(master, variant.audio);
+              for (const audio of audioRenditions) {
+                if (!audio.uri || seenAudioUrls.has(audio.uri)) continue;
+                seenAudioUrls.add(audio.uri);
                 streams.push({
-                  url: resolvedUrl,
-                  quality: height ? `${height}p` : `${Math.round(parseInt(bwMatch[1]) / 1000)}kbps`,
-                  resolution,
-                  bandwidth: parseInt(bwMatch[1]),
-                  type: 'muxed',
+                  url: audio.uri,
+                  quality: audio.name,
+                  type: 'audio',
                   format: 'hls',
+                  groupId: audio.groupId,
                 });
               }
             }
           }
         } catch {
-          // Parsing individual qualities is best-effort
+          downloadWarnings.push('Could not fully inspect Vimeo HLS variants; using best-effort stream selection.');
+        }
+
+        if (!streams.some((stream) => stream.url === hlsUrl)) {
+          streams.push({
+            url: hlsUrl,
+            quality: 'auto (HLS)',
+            type: hasSeparateAudio ? 'video' : 'muxed',
+            format: 'hls',
+          });
         }
       }
     }
@@ -280,6 +285,12 @@ const vimeoProvider: VideoProvider = {
       pageUrl: context.pageUrl ?? context.url,
       streams,
       subtitles,
+      downloadReadiness: streams.some((stream) => stream.type === 'audio')
+        ? 'ready_with_separate_audio_needing_merge'
+        : streams.some((stream) => stream.type === 'muxed')
+          ? 'ready_with_muxed_output'
+          : 'ready_video_only',
+      downloadWarnings,
       metadata: { vimeoId: videoId },
     };
   },
